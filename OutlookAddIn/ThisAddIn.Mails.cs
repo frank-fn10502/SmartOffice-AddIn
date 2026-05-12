@@ -297,6 +297,139 @@ namespace OutlookAddIn
         }
 
         /// <summary>
+        /// Builds the lean metadata used by list/search/slice commands.
+        /// Avoids expensive AddressEntry, Recipients and attachment-name enumeration.
+        /// Must be called on the Outlook STA thread.
+        /// </summary>
+        private MailItemDto ReadMailListMetadataDto(Outlook.MailItem mail, string folderPath)
+        {
+            if (mail == null) return null;
+            try
+            {
+                string entryId = "";
+                try { entryId = mail.EntryID ?? ""; } catch { }
+
+                string subject = "";
+                try { subject = mail.Subject ?? ""; } catch { }
+
+                var sender = new OutlookRecipientDto
+                {
+                    RecipientKind = "sender",
+                    Members = new List<OutlookRecipientDto>()
+                };
+                try { sender.DisplayName = mail.SenderName ?? ""; } catch { sender.DisplayName = ""; }
+                try { sender.RawAddress = mail.SenderEmailAddress ?? ""; } catch { sender.RawAddress = ""; }
+                sender.SmtpAddress = sender.RawAddress ?? "";
+                sender.AddressType = "";
+                sender.EntryUserType = "";
+
+                DateTime receivedTime = DateTime.MinValue;
+                try { receivedTime = mail.ReceivedTime; } catch { }
+
+                string categories = "";
+                try { categories = mail.Categories ?? ""; } catch { }
+
+                bool isRead = false;
+                try { isRead = !mail.UnRead; } catch { }
+
+                bool isMarkedAsTask = false;
+                try { isMarkedAsTask = mail.IsMarkedAsTask; } catch { }
+
+                string flagRequest = "";
+                try { flagRequest = mail.FlagRequest ?? ""; } catch { }
+
+                string flagInterval = "none";
+                try
+                {
+                    var fs = mail.FlagStatus;
+                    if (fs == Outlook.OlFlagStatus.olFlagMarked) flagInterval = "custom";
+                    else if (fs == Outlook.OlFlagStatus.olFlagComplete) flagInterval = "complete";
+                }
+                catch { }
+
+                DateTime? taskStartDate = null;
+                try { if (isMarkedAsTask) taskStartDate = mail.TaskStartDate; } catch { }
+
+                DateTime? taskDueDate = null;
+                try { if (isMarkedAsTask) taskDueDate = mail.TaskDueDate; } catch { }
+
+                DateTime? taskCompletedDate = null;
+                try { if (isMarkedAsTask) taskCompletedDate = mail.TaskCompletedDate; } catch { }
+
+                string importance = "normal";
+                try
+                {
+                    var imp = mail.Importance;
+                    if (imp == Outlook.OlImportance.olImportanceLow) importance = "low";
+                    else if (imp == Outlook.OlImportance.olImportanceHigh) importance = "high";
+                }
+                catch { }
+
+                string sensitivity = "normal";
+                try
+                {
+                    var s = mail.Sensitivity;
+                    if (s == Outlook.OlSensitivity.olPersonal) sensitivity = "personal";
+                    else if (s == Outlook.OlSensitivity.olPrivate) sensitivity = "private";
+                    else if (s == Outlook.OlSensitivity.olConfidential) sensitivity = "confidential";
+                }
+                catch { }
+
+                if (string.IsNullOrEmpty(folderPath))
+                {
+                    Outlook.MAPIFolder parent = null;
+                    try
+                    {
+                        parent = mail.Parent as Outlook.MAPIFolder;
+                        folderPath = parent?.FolderPath ?? "";
+                    }
+                    catch { folderPath = ""; }
+                    finally { if (parent != null) try { Marshal.ReleaseComObject(parent); } catch { } }
+                }
+
+                int attachmentCount = 0;
+                Outlook.Attachments atts = null;
+                try
+                {
+                    atts = mail.Attachments;
+                    if (atts != null) attachmentCount = atts.Count;
+                }
+                catch { }
+                finally { if (atts != null) try { Marshal.ReleaseComObject(atts); } catch { } }
+
+                return new MailItemDto
+                {
+                    Id = entryId,
+                    Subject = subject,
+                    Sender = sender,
+                    ToRecipients = new List<OutlookRecipientDto>(),
+                    CcRecipients = new List<OutlookRecipientDto>(),
+                    BccRecipients = new List<OutlookRecipientDto>(),
+                    ReceivedTime = receivedTime == DateTime.MinValue ? DateTime.Now : receivedTime,
+                    Body = "",
+                    BodyHtml = "",
+                    FolderPath = folderPath,
+                    Categories = categories,
+                    IsRead = isRead,
+                    IsMarkedAsTask = isMarkedAsTask,
+                    AttachmentCount = attachmentCount,
+                    AttachmentNames = "",
+                    FlagRequest = flagRequest,
+                    FlagInterval = flagInterval,
+                    TaskStartDate = taskStartDate,
+                    TaskDueDate = taskDueDate,
+                    TaskCompletedDate = taskCompletedDate,
+                    Importance = importance,
+                    Sensitivity = sensitivity
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Parses a date range string in the form "yyyy/MM/dd ~ yyyy/MM/dd" or
         /// "yyyy-MM-dd HH:mm ~ yyyy-MM-dd HH:mm" into start/end DateTimes.
         /// Returns false if the string is not a range expression.
@@ -428,7 +561,7 @@ namespace OutlookAddIn
 
                     try
                     {
-                        var dto = ReadSingleMailDto(mail, currentFolderPath, false);
+                        var dto = ReadMailListMetadataDto(mail, currentFolderPath);
                         if (dto != null)
                         {
                             mails.Add(dto);

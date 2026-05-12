@@ -59,66 +59,61 @@ namespace OutlookAddIn
 
             try
             {
-                List<MailItemDto> mails = null;
-                Exception searchEx = null;
-                _chatPane.Invoke((Action)(() =>
-                {
-                    try { mails = ExecuteMailSearchSlice(req); }
-                    catch (Exception ex) { searchEx = ex; }
-                }));
-
-                if (searchEx != null)
-                    throw searchEx;
-
                 // Clamp resultBatchSize to contract range [3, 5]; default 5.
                 int batchSize = req.ResultBatchSize > 0
                     ? Math.Max(3, Math.Min(5, req.ResultBatchSize))
                     : 5;
 
-                var allMails = mails ?? new List<MailItemDto>();
-                int total = allMails.Count;
-                int sequence = 1;
-
-                if (total == 0)
+                int total = 0;
+                string mode = req.ExecutionMode?.ToLower() ?? "outlook_search";
+                if (mode == "items_filter")
                 {
-                    // Always send at least one batch so Hub knows the slice is complete.
-                    await _signalRClient.PushMailSearchSliceResultAsync(new MailSearchSliceResultDto
-                    {
-                        SearchId = searchId,
-                        CommandId = cmd.Id,
-                        ParentCommandId = req.ParentCommandId ?? "",
-                        Sequence = sequence,
-                        SliceIndex = req.SliceIndex,
-                        SliceCount = req.SliceCount,
-                        Reset = req.ResetSearchResults,
-                        IsFinal = req.CompleteSearchOnSlice,
-                        IsSliceComplete = true,
-                        Mails = new List<MailItemDto>(),
-                        Message = ""
-                    });
+                    total = await PushMailSearchSliceItemsFilterFromOutlookAsync(cmd, req, batchSize);
                 }
                 else
                 {
-                    for (int offset = 0; offset < total; offset += batchSize)
+                    List<MailItemDto> mails = null;
+                    Exception searchEx = null;
+                    _chatPane.Invoke((Action)(() =>
                     {
-                        int count = Math.Min(batchSize, total - offset);
-                        var batch = allMails.GetRange(offset, count);
-                        bool isLastBatch = (offset + count >= total);
+                        try { mails = ExecuteMailSearchSliceAdvancedSearch(req); }
+                        catch (Exception ex) { searchEx = ex; }
+                    }));
 
+                    if (searchEx != null)
+                        throw searchEx;
+
+                    var allMails = mails ?? new List<MailItemDto>();
+                    total = allMails.Count;
+                    int sequence = 1;
+
+                    if (total == 0)
+                    {
                         await _signalRClient.PushMailSearchSliceResultAsync(new MailSearchSliceResultDto
                         {
                             SearchId = searchId,
                             CommandId = cmd.Id,
                             ParentCommandId = req.ParentCommandId ?? "",
-                            Sequence = sequence++,
+                            Sequence = sequence,
                             SliceIndex = req.SliceIndex,
                             SliceCount = req.SliceCount,
-                            Reset = req.ResetSearchResults && offset == 0,
-                            IsFinal = isLastBatch && req.CompleteSearchOnSlice,
-                            IsSliceComplete = isLastBatch,
-                            Mails = batch,
+                            Reset = req.ResetSearchResults,
+                            IsFinal = req.CompleteSearchOnSlice,
+                            IsSliceComplete = true,
+                            Mails = new List<MailItemDto>(),
                             Message = ""
                         });
+                    }
+                    else
+                    {
+                        for (int offset = 0; offset < total; offset += batchSize)
+                        {
+                            int count = Math.Min(batchSize, total - offset);
+                            var batch = allMails.GetRange(offset, count);
+                            bool isLastBatch = (offset + count >= total);
+
+                            await PushMailSearchBatchAsync(cmd, req, searchId, sequence++, batch, isLastBatch, isLastBatch && req.CompleteSearchOnSlice);
+                        }
                     }
                 }
 
@@ -163,6 +158,119 @@ namespace OutlookAddIn
             if (mode == "items_filter")
                 return ExecuteMailSearchSliceItemsFilter(req);
             return ExecuteMailSearchSliceAdvancedSearch(req);
+        }
+
+        private async Task<int> PushMailSearchSliceItemsFilterFromOutlookAsync(
+            OutlookCommand cmd,
+            OutlookCommandMailSearchSliceRequest req,
+            int batchSize)
+        {
+            string searchId = req.SearchId ?? "";
+            int total = 0;
+            int sequence = 1;
+            var batch = new List<MailItemDto>(batchSize);
+
+            Outlook.MAPIFolder folder = null;
+            Outlook.Items items = null;
+            Outlook.Items filtered = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(req.FolderEntryId))
+                    folder = GetFolderByEntryIdInStore(req.StoreId, req.FolderEntryId);
+
+                if (folder == null && !string.IsNullOrEmpty(req.FolderPath))
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "ExecuteMailSearchSliceItemsFilter: folderEntryId not resolved; using folderPath fallback");
+                    folder = GetFolderByPathInStore(req.StoreId, req.FolderPath);
+                }
+
+                if (folder == null)
+                {
+                    await PushMailSearchBatchAsync(cmd, req, searchId, sequence, batch, true, req.CompleteSearchOnSlice);
+                    return total;
+                }
+
+                string currentFolderPath = "";
+                try { currentFolderPath = folder.FolderPath ?? ""; } catch { }
+
+                items = folder.Items;
+                string filterExpr = BuildItemsFilterExpr(req);
+                filtered = filterExpr != null ? items.Restrict(filterExpr) : items;
+
+                var textFields = (req.TextFields != null && req.TextFields.Count > 0)
+                    ? req.TextFields
+                    : new List<string> { "subject" };
+                bool searchSubject = textFields.Contains("subject");
+                bool searchSender = textFields.Contains("sender");
+
+                foreach (var obj in filtered)
+                {
+                    var mail = obj as Outlook.MailItem;
+                    MailItemDto dto = null;
+                    if (mail == null)
+                    {
+                        if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { }
+                        continue;
+                    }
+                    try
+                    {
+                        if (!MatchesItemsFilter(mail, req, searchSubject, searchSender))
+                            continue;
+
+                        dto = ReadMailListMetadataDto(mail, currentFolderPath);
+                    }
+                    catch { }
+                    finally { try { Marshal.ReleaseComObject(mail); } catch { } }
+
+                    if (dto == null)
+                        continue;
+
+                    batch.Add(dto);
+                    total++;
+                    if (batch.Count >= batchSize)
+                    {
+                        await PushMailSearchBatchAsync(cmd, req, searchId, sequence++, batch, false, false);
+                        batch = new List<MailItemDto>(batchSize);
+                        System.Windows.Forms.Application.DoEvents();
+                    }
+                }
+            }
+            finally
+            {
+                if (filtered != null && !ReferenceEquals(filtered, items))
+                    try { Marshal.ReleaseComObject(filtered); } catch { }
+                if (items != null) try { Marshal.ReleaseComObject(items); } catch { }
+                if (folder != null) try { Marshal.ReleaseComObject(folder); } catch { }
+            }
+
+            await PushMailSearchBatchAsync(cmd, req, searchId, sequence, batch, true, req.CompleteSearchOnSlice);
+            return total;
+        }
+
+        private async Task PushMailSearchBatchAsync(
+            OutlookCommand cmd,
+            OutlookCommandMailSearchSliceRequest req,
+            string searchId,
+            int sequence,
+            List<MailItemDto> mails,
+            bool isSliceComplete,
+            bool isFinal)
+        {
+            await _signalRClient.PushMailSearchSliceResultAsync(new MailSearchSliceResultDto
+            {
+                SearchId = searchId,
+                CommandId = cmd.Id,
+                ParentCommandId = req.ParentCommandId ?? "",
+                Sequence = sequence,
+                SliceIndex = req.SliceIndex,
+                SliceCount = req.SliceCount,
+                Reset = req.ResetSearchResults && sequence == 1,
+                IsFinal = isFinal,
+                IsSliceComplete = isSliceComplete,
+                Mails = mails ?? new List<MailItemDto>(),
+                Message = ""
+            });
         }
 
         /// <summary>
@@ -218,7 +326,7 @@ namespace OutlookAddIn
                     {
                         if (!MatchesItemsFilter(mail, req, searchSubject, searchSender))
                             continue;
-                        var dto = ReadSingleMailDto(mail, currentFolderPath, false);
+                        var dto = ReadMailListMetadataDto(mail, currentFolderPath);
                         if (dto != null) results.Add(dto);
                     }
                     catch { }
@@ -290,7 +398,15 @@ namespace OutlookAddIn
             if (req.HasAttachments.HasValue)
             {
                 int attCount = 0;
-                try { attCount = mail.Attachments?.Count ?? 0; } catch { }
+                Outlook.Attachments atts = null;
+                try
+                {
+                    atts = mail.Attachments;
+                    if (atts != null) attCount = atts.Count;
+                }
+                catch { }
+                finally { if (atts != null) try { Marshal.ReleaseComObject(atts); } catch { } }
+
                 if (req.HasAttachments.Value && attCount == 0) return false;
                 if (!req.HasAttachments.Value && attCount > 0) return false;
             }
@@ -367,7 +483,7 @@ namespace OutlookAddIn
                             {
                                 mail = resultSet[i] as Outlook.MailItem;
                                 if (mail == null) continue;
-                                var dto = ReadSingleMailDto(mail, folder.FolderPath, false);
+                                var dto = ReadMailListMetadataDto(mail, folder.FolderPath);
                                 if (dto != null) results.Add(dto);
                             }
                             catch { }
