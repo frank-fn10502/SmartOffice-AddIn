@@ -2,6 +2,7 @@
 
 > 此文件整理自 `MailAutomation/SmartMail` 專案，該專案使用 COM Interop 直接操作 Outlook 2016。
 > 現已決定改用 VSTO Add-in 架構（SmartOffice），此處僅保留功能需求與設計參考。
+> 遷移任何功能時，請先查 Microsoft 官方文件確認 Outlook/Office API 概念可行，再在 `SmartOffice.Hub` 建立目前 contract、mock backend、API/Web UI 驗證與文件；確認 Mock 與文件一致、基本 UI 可操作、Hub 不會把工作拆成大量 AddIn command 後，才修改 `SmartOffice/OutlookAddIn` 的 VSTO 真實實作。不要直接依本 Legacy 文件改 Add-in。
 
 ---
 

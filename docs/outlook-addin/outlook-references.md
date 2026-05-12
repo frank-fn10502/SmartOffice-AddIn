@@ -13,6 +13,8 @@
 - 除非 Microsoft 官方文件明確指出某個 API 呼叫方式可改善效能，否則 AddIn 應選擇最簡單的 Outlook object model 流程；不要為了預想的效能優化加入額外排程、快取或 legacy fallback。
 - 遇到 `COMException`、`RPC_E_SERVERCALL_RETRYLATER`、Outlook busy、UI thread 卡頓、大量 mail/folder 枚舉或 COM object lifetime 問題時，修改前必須先查本文件的官方入口；若官方資料無法解釋實際錯誤，再查 Microsoft Q&A、Stack Overflow 或相關 issue 作為輔助，且回報時要明確標示社群資料只是經驗佐證。
 - 任何效能修正都要先確認責任邊界：Hub 負責跨 command / 跨 folder 排程與負載管理；AddIn 負責在單一 command 內用可中止、可診斷、低 COM 壓力的方式處理 Outlook object model。
+- Hub/mock 階段完成後，進入 VSTO 真實實作前仍需重新核對本文件或 Microsoft Learn 對應頁面。Mock 只能證明 contract 與 UI workflow，不可替代 Outlook COM 行為查證。
+- 若 Microsoft 官方文件與工作機實測或社群討論不同，請以 `test-report.md` 回報：官方文件是主要依據，社群討論只能作為錯誤現象、workaround 或環境差異的補充。
 
 ## VSTO / COM Add-in
 
@@ -36,6 +38,8 @@ Office 2016 desktop 深度整合通常會碰到 VSTO、COM automation 或 Outloo
 - [Folder.PropertyAccessor property (Outlook)](https://learn.microsoft.com/en-us/office/vba/api/outlook.folder.propertyaccessor)：讀取 Outlook object model 未直接 exposed 的 folder MAPI properties，例如 hidden/system flags。
 - [Default folder is missing in Outlook and Outlook on the web](https://learn.microsoft.com/en-us/troubleshoot/outlook/user-interface/default-folder-is-missing)：Microsoft support 文件說明 `PR_ATTR_HIDDEN` 與 `PR_ATTR_SYSTEM` 這兩個 folder 屬性。
 - [MailItem object (Outlook)](https://learn.microsoft.com/en-us/office/vba/api/outlook.mailitem)：郵件 item、subject、sender、body、received time 等欄位。
+- [MailItem.GetConversation method (Outlook)](https://learn.microsoft.com/en-us/office/vba/api/outlook.mailitem.getconversation)：取得 item 所屬 conversation；官方文件說明未保存/未送出、registry 關閉 conversation 或 store 不支援 conversation view 時可能回 null。
+- [Store.IsConversationEnabled property (Outlook)](https://learn.microsoft.com/en-us/office/vba/api/outlook.store.isconversationenabled)：判斷 store 是否支援 Conversation view；conversation 功能實作前應優先檢查。
 - [Application.AdvancedSearch method (Outlook)](https://learn.microsoft.com/en-us/office/vba/api/outlook.application.advancedsearch)：非同步搜尋；scope 可含同一個 store 內的多個 folder，不能跨 store。Microsoft 文件提醒大量 simultaneous search 會造成顯著搜尋活動並影響 Outlook performance；AddIn 收到 `fetch_mail_search_slice` 時只處理 request 指定的單一 folder。
 - [Application.AdvancedSearchComplete event (Outlook)](https://learn.microsoft.com/en-us/office/vba/api/outlook.application.advancedsearchcomplete)：`AdvancedSearch` 完成事件，避免以 blocking loop 等待。
 - [Search the Inbox for Items with Subject Containing Office](https://learn.microsoft.com/en-us/office/vba/outlook/how-to/search-and-filter/search-the-inbox-for-items-with-subject-containing-office)：Microsoft 的 Subject contains 範例，示範以 DASL `ci_phrasematch` 查詢 Subject 內含關鍵字；正式搜尋應參考這類 Outlook 內建搜尋流程。

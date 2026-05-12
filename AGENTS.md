@@ -44,6 +44,7 @@
 ## 修改原則
 
 - Office 2016 與受限企業環境是設計約束。避免引入需要新平台、新 runtime 或 cloud-only dependency 的做法。
+- 若功能同時需要 Hub/API/Web UI/mock 與 VSTO 真實實作，不能直接從 Outlook Add-in 開始改。必須先確認 `../SmartOffice.Hub` 已完成官方文件可行性確認、contract、mock backend、Web UI/API workflow、基本 UI 檢查、負載控管設計與文件更新，且本機 Mock 驗證與 `./scripts/build-in-container.sh` 通過；之後才修改 `OutlookAddIn/` 的 Office automation。
 - Outlook COM object 使用要小心釋放與例外處理；避免長時間阻塞 Outlook UI thread。
 - 涉及 Outlook/VSTO/COM automation、Office UI thread、`COMException`、大量 mail/folder 枚舉、效能頓挫或 Outlook object model 行為判斷時，修改前必須先查 Microsoft 官方文件；若官方文件不足以解釋真實錯誤，再補查 Microsoft Q&A、Stack Overflow 或套件 issue 等討論區回報作為輔助。最終回覆要簡短列出採用的依據，並區分「官方依據」與「社群經驗」。
 - 對效能修正要站在 Add-in 角度降低 COM/STA 負擔：避免列表階段讀完整 body、全部 recipients、附件檔名或跨 folder 自行排程；避免在持有短生命週期 Outlook COM object 時等待網路 I/O；每個自己取得的短生命週期 COM object 要在可控範圍釋放。
