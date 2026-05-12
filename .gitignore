@@ -1,0 +1,82 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+out/
+artifacts/
+
+## Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+## Visual Studio cache/options
+*.ide/
+*.cache
+*.tmp
+*.temp
+
+## Rider / ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+## Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.trx
+*.coverage
+*.coveragexml
+
+## NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+## .NET local tools / symbols
+*.pdb
+*.mdb
+
+## ASP.NET / IIS Express
+/.idea/
+/.fleet/
+wwwroot/lib/
+
+## Publish output
+publish/
+*.publishsettings
+
+## App settings / secrets (keep samples if needed)
+appsettings.*.local.json
+secrets.json
+
+## Certificates / signing keys
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk
+*.cer
+*.crt
+
+## Node (if frontend tooling is added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+## OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Generated files (optional)
+Generated_Code/
