@@ -22,7 +22,6 @@
 - `OutlookAddIn/SmartOfficeRibbon.*`：Ribbon button 與 UI entry point。
 - `OutlookAddIn.Tests/`：不依賴 COM/VSTO 的純邏輯測試，目前用 xUnit / .NET 8 測 `FolderFilter` 這類可抽離邏輯。
 - `docs/outlook-addin/`：Outlook Add-in 實作者文件、SignalR contract、功能 checklist、官方文件入口與工作機測試回報格式。
-- `docs/MailAutomation-Legacy/`：舊版 mail automation 文件，採用前請先比對目前 Hub contract。
 
 ## 與 SmartOffice.Hub 的關係
 
