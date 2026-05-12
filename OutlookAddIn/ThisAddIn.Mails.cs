@@ -184,6 +184,13 @@ namespace OutlookAddIn
                 string categories = "";
                 try { categories = mail.Categories ?? ""; } catch { }
 
+                string conversationId = "";
+                try { conversationId = mail.ConversationID ?? ""; } catch { }
+                string conversationTopic = "";
+                try { conversationTopic = mail.ConversationTopic ?? ""; } catch { }
+                string conversationIndex = "";
+                try { conversationIndex = mail.ConversationIndex ?? ""; } catch { }
+
                 bool isRead = false;
                 try { isRead = !mail.UnRead; } catch { }
 
@@ -276,6 +283,9 @@ namespace OutlookAddIn
                     Body = body,
                     BodyHtml = bodyHtml,
                     FolderPath = folderPath,
+                    ConversationId = conversationId,
+                    ConversationTopic = conversationTopic,
+                    ConversationIndex = conversationIndex,
                     Categories = categories,
                     IsRead = isRead,
                     IsMarkedAsTask = isMarkedAsTask,
@@ -328,6 +338,13 @@ namespace OutlookAddIn
 
                 string categories = "";
                 try { categories = mail.Categories ?? ""; } catch { }
+
+                string conversationId = "";
+                try { conversationId = mail.ConversationID ?? ""; } catch { }
+                string conversationTopic = "";
+                try { conversationTopic = mail.ConversationTopic ?? ""; } catch { }
+                string conversationIndex = "";
+                try { conversationIndex = mail.ConversationIndex ?? ""; } catch { }
 
                 bool isRead = false;
                 try { isRead = !mail.UnRead; } catch { }
@@ -409,6 +426,9 @@ namespace OutlookAddIn
                     Body = "",
                     BodyHtml = "",
                     FolderPath = folderPath,
+                    ConversationId = conversationId,
+                    ConversationTopic = conversationTopic,
+                    ConversationIndex = conversationIndex,
                     Categories = categories,
                     IsRead = isRead,
                     IsMarkedAsTask = isMarkedAsTask,
@@ -718,6 +738,144 @@ namespace OutlookAddIn
             }
             catch { return null; }
             finally { if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { } }
+        }
+
+        /// <summary>
+        /// Reads the Outlook conversation for a single mail. Requires Windows Outlook COM/VSTO runtime validation.
+        /// </summary>
+        public MailConversationDto ReadMailConversation(string mailId, string folderPath, int maxCount, bool includeBody)
+        {
+            Outlook.MailItem mail = null;
+            Outlook.Conversation conversation = null;
+            try
+            {
+                mail = FindMailByEntryId(mailId);
+                if (mail == null) return null;
+
+                if (maxCount <= 0) maxCount = 100;
+                if (maxCount > 300) maxCount = 300;
+                if (string.IsNullOrEmpty(folderPath)) folderPath = GetMailFolderPath(mail);
+
+                string conversationId = "";
+                try { conversationId = mail.ConversationID ?? ""; } catch { }
+                string conversationTopic = "";
+                try { conversationTopic = mail.ConversationTopic ?? ""; } catch { }
+
+                var mails = new List<MailItemDto>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                if (IsConversationEnabled(mail))
+                {
+                    try { conversation = mail.GetConversation(); } catch { conversation = null; }
+                    if (conversation != null)
+                    {
+                        Outlook.SimpleItems roots = null;
+                        try
+                        {
+                            roots = conversation.GetRootItems();
+                            if (roots != null)
+                            {
+                                foreach (object root in roots)
+                                    AddConversationItem(root, conversation, mails, seen, includeBody, maxCount);
+                            }
+                        }
+                        finally { if (roots != null) try { Marshal.ReleaseComObject(roots); } catch { } }
+                    }
+                }
+
+                if (mails.Count == 0)
+                {
+                    var single = ReadSingleMailDto(mail, folderPath, includeBody);
+                    if (single != null) mails.Add(single);
+                }
+
+                mails.Sort((left, right) => left.ReceivedTime.CompareTo(right.ReceivedTime));
+
+                return new MailConversationDto
+                {
+                    MailId = mailId,
+                    FolderPath = folderPath,
+                    ConversationId = conversationId,
+                    ConversationTopic = conversationTopic,
+                    Mails = mails
+                };
+            }
+            catch { return null; }
+            finally
+            {
+                if (conversation != null) try { Marshal.ReleaseComObject(conversation); } catch { }
+                if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { }
+            }
+        }
+
+        private bool IsConversationEnabled(Outlook.MailItem mail)
+        {
+            Outlook.MAPIFolder folder = null;
+            Outlook.Store store = null;
+            try
+            {
+                folder = mail.Parent as Outlook.MAPIFolder;
+                if (folder == null) return false;
+                store = folder.Store;
+                return store != null && store.IsConversationEnabled;
+            }
+            catch { return false; }
+            finally
+            {
+                if (store != null) try { Marshal.ReleaseComObject(store); } catch { }
+                if (folder != null) try { Marshal.ReleaseComObject(folder); } catch { }
+            }
+        }
+
+        private void AddConversationItem(object item, Outlook.Conversation conversation, List<MailItemDto> mails, HashSet<string> seen, bool includeBody, int maxCount)
+        {
+            try
+            {
+                if (mails.Count >= maxCount) return;
+                var mail = item as Outlook.MailItem;
+                if (mail != null)
+                {
+                    string entryId = "";
+                    try { entryId = mail.EntryID ?? ""; } catch { }
+                    if (!string.IsNullOrEmpty(entryId) && !seen.Contains(entryId))
+                    {
+                        var dto = ReadSingleMailDto(mail, GetMailFolderPath(mail), includeBody);
+                        if (dto != null)
+                        {
+                            mails.Add(dto);
+                            seen.Add(entryId);
+                        }
+                    }
+                }
+
+                Outlook.SimpleItems children = null;
+                try
+                {
+                    children = conversation.GetChildren(item);
+                    if (children != null)
+                    {
+                        foreach (object child in children)
+                            AddConversationItem(child, conversation, mails, seen, includeBody, maxCount);
+                    }
+                }
+                finally { if (children != null) try { Marshal.ReleaseComObject(children); } catch { } }
+            }
+            finally
+            {
+                if (item != null) try { Marshal.ReleaseComObject(item); } catch { }
+            }
+        }
+
+        private static string GetMailFolderPath(Outlook.MailItem mail)
+        {
+            Outlook.MAPIFolder parent = null;
+            try
+            {
+                parent = mail.Parent as Outlook.MAPIFolder;
+                return parent?.FolderPath ?? "";
+            }
+            catch { return ""; }
+            finally { if (parent != null) try { Marshal.ReleaseComObject(parent); } catch { } }
         }
 
         /// <summary>

@@ -19,6 +19,7 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 - [ ] 每個 command 完成後都有 `ReportCommandResult`，失敗時 message 可診斷且不得含敏感資料。
 - [ ] 會改變 Outlook snapshot 的 command 會 invoke 對應 `Push*`。
 - [ ] 所有 `MailItemDto.id` 都是非空，且 AddIn 可用它找回該 Outlook item。
+- [ ] `MailItemDto` 若 Outlook 有提供，應填入 `conversationId`、`conversationTopic`、`conversationIndex`，並支援 `fetch_mail_conversation` / `PushMailConversation`。
 - [ ] Folder tree 第一層是 Outlook Store：主要 OST 與每個 PST 都是獨立頂層。
 - [ ] 測試資料與錯誤回報需匿名化。
 - [ ] 不保留舊版或未使用功能：不要實作 `/api/outlook/poll`、`/api/outlook/push-*`、HTTP chat 或未列於 contract 的 legacy command。

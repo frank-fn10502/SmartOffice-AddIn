@@ -53,6 +53,9 @@ namespace OutlookAddIn
         public string Body { get; set; }
         public string BodyHtml { get; set; }
         public string FolderPath { get; set; }
+        public string ConversationId { get; set; }
+        public string ConversationTopic { get; set; }
+        public string ConversationIndex { get; set; }
         public string Categories { get; set; }
         public bool IsRead { get; set; }
         public bool IsMarkedAsTask { get; set; }
@@ -226,6 +229,15 @@ namespace OutlookAddIn
         public string MailId { get; set; }
         public string FolderPath { get; set; }
         public List<MailAttachmentDto> Attachments { get; set; }
+    }
+
+    public class MailConversationDto
+    {
+        public string MailId { get; set; }
+        public string FolderPath { get; set; }
+        public string ConversationId { get; set; }
+        public string ConversationTopic { get; set; }
+        public List<MailItemDto> Mails { get; set; }
     }
 
     public class ExportedMailAttachmentDto

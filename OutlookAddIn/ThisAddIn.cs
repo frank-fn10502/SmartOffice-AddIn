@@ -196,6 +196,33 @@ namespace OutlookAddIn
                     }
                     break;
 
+                case "fetch_mail_conversation":
+                    try
+                    {
+                        var convReq = cmd.MailConversationRequest;
+                        if (convReq == null || string.IsNullOrEmpty(convReq.MailId))
+                        {
+                            await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mail_conversation failed: missing mail id");
+                            break;
+                        }
+
+                        MailConversationDto convDto = ReadMailConversation(convReq.MailId, convReq.FolderPath, convReq.MaxCount, convReq.IncludeBody);
+
+                        if (convDto == null)
+                        {
+                            await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mail_conversation failed: mail not found or conversation unavailable");
+                            break;
+                        }
+
+                        await _signalRClient.PushMailConversationAsync(convDto);
+                        await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_mail_conversation completed. Items: " + (convDto.Mails?.Count ?? 0));
+                    }
+                    catch (Exception ex)
+                    {
+                        await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mail_conversation error: " + SanitizeExceptionForLog(ex));
+                    }
+                    break;
+
                 case "export_mail_attachment":
                     try
                     {

@@ -152,6 +152,12 @@ namespace OutlookAddIn
             await _connection.InvokeAsync("PushMailAttachments", attachments).ConfigureAwait(false);
         }
 
+        public async Task PushMailConversationAsync(MailConversationDto conversation)
+        {
+            if (!IsConnected) return;
+            await _connection.InvokeAsync("PushMailConversation", conversation).ConfigureAwait(false);
+        }
+
         public async Task PushExportedMailAttachmentAsync(ExportedMailAttachmentDto exported)
         {
             if (!IsConnected) return;
@@ -234,6 +240,7 @@ namespace OutlookAddIn
         public OutlookCommandMailSearchSliceRequest MailSearchSliceRequest { get; set; }
         public OutlookCommandMailBodyRequest MailBodyRequest { get; set; }
         public OutlookCommandMailAttachmentsRequest MailAttachmentsRequest { get; set; }
+        public OutlookCommandMailConversationRequest MailConversationRequest { get; set; }
         public OutlookCommandExportMailAttachmentRequest ExportMailAttachmentRequest { get; set; }
         public OutlookCommandCalendarRequest CalendarRequest { get; set; }
         public OutlookCommandMailPropertiesRequest MailPropertiesRequest { get; set; }
@@ -329,6 +336,14 @@ namespace OutlookAddIn
     {
         public string MailId { get; set; }
         public string FolderPath { get; set; }
+    }
+
+    public class OutlookCommandMailConversationRequest
+    {
+        public string MailId { get; set; }
+        public string FolderPath { get; set; }
+        public int MaxCount { get; set; }
+        public bool IncludeBody { get; set; }
     }
 
     public class OutlookCommandExportMailAttachmentRequest
