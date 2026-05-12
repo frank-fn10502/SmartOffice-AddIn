@@ -159,10 +159,12 @@ namespace OutlookAddIn
 
     public class OutlookRuleDto
     {
+        public string StoreId { get; set; }
         public string Name { get; set; }
         public bool Enabled { get; set; }
         public int ExecutionOrder { get; set; }
         public string RuleType { get; set; }
+        public bool IsLocalRule { get; set; }
         public List<string> Conditions { get; set; }
         public List<string> Actions { get; set; }
         public List<string> Exceptions { get; set; }
