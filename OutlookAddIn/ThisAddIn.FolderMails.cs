@@ -60,8 +60,11 @@ namespace OutlookAddIn
                 int batchSize = req.ResultBatchSize > 0
                     ? Math.Max(3, Math.Min(5, req.ResultBatchSize))
                     : 5;
+                int maxCount = req.MaxCount > 0
+                    ? Math.Max(1, Math.Min(500, req.MaxCount))
+                    : 30;
 
-                int total = await PushFolderMailsSliceFromOutlookAsync(cmd, req, batchSize);
+                int total = await PushFolderMailsSliceFromOutlookAsync(cmd, req, batchSize, maxCount);
 
                 if (req.CompleteOnSlice)
                 {
@@ -102,7 +105,8 @@ namespace OutlookAddIn
         private async Task<int> PushFolderMailsSliceFromOutlookAsync(
             OutlookCommand cmd,
             OutlookCommandFolderMailsSliceRequest req,
-            int batchSize)
+            int batchSize,
+            int maxCount)
         {
             string folderMailsId = req.FolderMailsId ?? "";
             int total = 0;
@@ -137,6 +141,8 @@ namespace OutlookAddIn
 
                 foreach (var obj in filtered)
                 {
+                    if (total >= maxCount) break;
+
                     var mail = obj as Outlook.MailItem;
                     MailItemDto dto = null;
                     if (mail == null)

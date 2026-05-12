@@ -282,6 +282,7 @@ AddIn 實作時應使用 `Store.GetRules()` 取得 rules collection。新增 rul
   "folderPath": "\\\\主要信箱 - User\\Inbox\\folderA",
   "receivedFrom": "2026-05-01T00:00:00+08:00",
   "receivedTo": "2026-05-04T23:59:59+08:00",
+  "maxCount": 30,
   "sliceIndex": 0,
   "sliceCount": 30,
   "resultBatchSize": 5,
@@ -297,12 +298,13 @@ AddIn 實作時應使用 `Store.GetRules()` 取得 rules collection。新增 rul
 - `folderEntryId`: Outlook folder EntryID，必須非空；AddIn 應優先使用 `storeId` + `folderEntryId` 定位 folder。
 - `folderPath`: 指定單一 Outlook folder，必須非空；只作為顯示與 `folderEntryId` 無法定位時的 fallback。
 - `receivedFrom` / `receivedTo`: 收到時間區段，兩者可獨立使用。
+- `maxCount`: 此 folder slice 最多回傳幾封 mail；AddIn 應 clamp 到 `1` 到 `500`，預設 `30`。
 - `sliceIndex` / `sliceCount`: folder slice 序號與總數，可用於 progress message。
 - `resultBatchSize`: 結果每批回推筆數；AddIn 應 clamp 在 `3` 到 `5` 之間，預設 `5`。
 - `resetResults`: 只有第一個 slice 是 `true`。
 - `completeOnSlice`: 只有最後一個 slice 是 `true`。
 
-AddIn 收到 `fetch_folder_mails_slice` 時，必須定位指定單一 folder，使用該 folder 的 `Items` 逐步讀取 mail metadata；若有 `receivedFrom` / `receivedTo`，可用 `Items.Restrict` 或枚舉時比對時間。回傳使用 `BeginFolderMails`、`PushFolderMailsSliceResult`、`CompleteFolderMailsSlice`，只回 metadata，`body` / `bodyHtml` 應留空。
+AddIn 收到 `fetch_folder_mails_slice` 時，必須定位指定單一 folder，使用該 folder 的 `Items` / `Items.Restrict` 或 `Folder.GetTable` 逐步讀取 mail metadata；若有 `receivedFrom` / `receivedTo`，可用 Outlook filter 限縮時間。AddIn 必須遵守 `maxCount`，避免單一 command 長時間占用 Outlook UI thread。回傳使用 `BeginFolderMails`、`PushFolderMailsSliceResult`、`CompleteFolderMailsSlice`，只回 metadata，`body` / `bodyHtml` 應留空。
 
 Folder mails slice result sample：
 

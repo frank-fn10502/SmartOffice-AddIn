@@ -456,6 +456,8 @@ namespace OutlookAddIn
         public string FolderPath { get; set; }
         public DateTime? ReceivedFrom { get; set; }
         public DateTime? ReceivedTo { get; set; }
+        /// <summary>Maximum mails to return for this folder slice. AddIn clamps to 1-500; default 30.</summary>
+        public int MaxCount { get; set; }
         public int SliceIndex { get; set; }
         public int SliceCount { get; set; }
         /// <summary>Number of mails per PushFolderMailsSliceResult batch. AddIn clamps to 3-5; default 5.</summary>

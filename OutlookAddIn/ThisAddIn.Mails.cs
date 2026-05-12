@@ -511,8 +511,6 @@ namespace OutlookAddIn
                     return mails;
                 }
 
-                var items = folder.Items;
-
                 // Determine date range: Hub sends receivedFrom/receivedTo directly.
                 DateTime since = DateTime.MinValue;
                 DateTime until = DateTime.MaxValue;
@@ -558,14 +556,22 @@ namespace OutlookAddIn
                 else
                     filterExpr = null;
 
+                string currentFolderPath = "";
+                try { currentFolderPath = folder.FolderPath ?? ""; } catch { }
+
+                if (TryReadMailsFromTable(folder, currentFolderPath, filterExpr, maxCount, mails))
+                {
+                    try { Marshal.ReleaseComObject(folder); } catch { }
+                    return mails;
+                }
+
+                var items = folder.Items;
+
                 // Apply Restrict first, then Sort the filtered collection.
                 // Sorting before Restrict can cause COM exceptions and the restricted
                 // collection does not inherit the sort order.
                 Outlook.Items filtered = filterExpr != null ? items.Restrict(filterExpr) : items;
                 filtered.Sort("[ReceivedTime]", true);
-
-                string currentFolderPath = "";
-                try { currentFolderPath = folder.FolderPath ?? ""; } catch { }
 
                 int count = 0;
                 foreach (var obj in filtered)
@@ -607,6 +613,175 @@ namespace OutlookAddIn
                 System.Diagnostics.Debug.WriteLine("ReadMails error: " + ex);
             }
             return mails;
+        }
+
+        private bool TryReadMailsFromTable(
+            Outlook.MAPIFolder folder,
+            string folderPath,
+            string filterExpr,
+            int maxCount,
+            List<MailItemDto> mails)
+        {
+            Outlook.Table table = null;
+            try
+            {
+                table = folder.GetTable(filterExpr ?? "", Outlook.OlTableContents.olUserItems);
+                TryResetTableColumns(table,
+                    "EntryID",
+                    "Subject",
+                    "SenderName",
+                    "SenderEmailAddress",
+                    "ReceivedTime",
+                    "Categories",
+                    "ConversationID",
+                    "ConversationTopic",
+                    "ConversationIndex",
+                    "UnRead",
+                    "IsMarkedAsTask",
+                    "FlagRequest",
+                    "FlagStatus",
+                    "Importance",
+                    "Sensitivity");
+                table.Sort("[ReceivedTime]", true);
+
+                int count = 0;
+                while (!table.EndOfTable && count < maxCount)
+                {
+                    Outlook.Row row = null;
+                    try
+                    {
+                        row = table.GetNextRow();
+                        var dto = BuildMailListMetadataDtoFromTableRow(row, folderPath);
+                        if (dto == null || string.IsNullOrEmpty(dto.Id)) continue;
+                        mails.Add(dto);
+                        count++;
+                    }
+                    catch { }
+                    finally { if (row != null) try { Marshal.ReleaseComObject(row); } catch { } }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("TryReadMailsFromTable fallback: " + ex.Message);
+                mails.Clear();
+                return false;
+            }
+            finally
+            {
+                if (table != null) try { Marshal.ReleaseComObject(table); } catch { }
+            }
+        }
+
+        private static void TryResetTableColumns(Outlook.Table table, params string[] columns)
+        {
+            Outlook.Columns tableColumns = null;
+            try
+            {
+                tableColumns = table.Columns;
+                try { tableColumns.RemoveAll(); } catch { }
+                foreach (var column in columns)
+                {
+                    try { tableColumns.Add(column); } catch { }
+                }
+            }
+            finally
+            {
+                if (tableColumns != null) try { Marshal.ReleaseComObject(tableColumns); } catch { }
+            }
+        }
+
+        private static MailItemDto BuildMailListMetadataDtoFromTableRow(Outlook.Row row, string folderPath)
+        {
+            if (row == null) return null;
+
+            var senderAddress = TableString(row, "SenderEmailAddress");
+            var receivedTime = TableDate(row, "ReceivedTime") ?? DateTime.Now;
+            var isMarkedAsTask = TableBool(row, "IsMarkedAsTask");
+            var flagStatus = TableInt(row, "FlagStatus");
+            var importanceValue = TableInt(row, "Importance");
+            var sensitivityValue = TableInt(row, "Sensitivity");
+
+            return new MailItemDto
+            {
+                Id = TableString(row, "EntryID"),
+                Subject = TableString(row, "Subject"),
+                Sender = new OutlookRecipientDto
+                {
+                    RecipientKind = "sender",
+                    DisplayName = TableString(row, "SenderName"),
+                    RawAddress = senderAddress,
+                    SmtpAddress = senderAddress,
+                    AddressType = "",
+                    EntryUserType = "",
+                    Members = new List<OutlookRecipientDto>()
+                },
+                ToRecipients = new List<OutlookRecipientDto>(),
+                CcRecipients = new List<OutlookRecipientDto>(),
+                BccRecipients = new List<OutlookRecipientDto>(),
+                ReceivedTime = receivedTime,
+                Body = "",
+                BodyHtml = "",
+                FolderPath = folderPath,
+                ConversationId = TableString(row, "ConversationID"),
+                ConversationTopic = TableString(row, "ConversationTopic"),
+                ConversationIndex = TableString(row, "ConversationIndex"),
+                Categories = TableString(row, "Categories"),
+                IsRead = !TableBool(row, "UnRead"),
+                IsMarkedAsTask = isMarkedAsTask,
+                AttachmentCount = 0,
+                AttachmentNames = "",
+                FlagRequest = TableString(row, "FlagRequest"),
+                FlagInterval = flagStatus == (int)Outlook.OlFlagStatus.olFlagMarked
+                    ? "custom"
+                    : flagStatus == (int)Outlook.OlFlagStatus.olFlagComplete ? "complete" : "none",
+                Importance = importanceValue == (int)Outlook.OlImportance.olImportanceHigh
+                    ? "high"
+                    : importanceValue == (int)Outlook.OlImportance.olImportanceLow ? "low" : "normal",
+                Sensitivity = sensitivityValue == (int)Outlook.OlSensitivity.olPersonal
+                    ? "personal"
+                    : sensitivityValue == (int)Outlook.OlSensitivity.olPrivate
+                        ? "private"
+                        : sensitivityValue == (int)Outlook.OlSensitivity.olConfidential ? "confidential" : "normal"
+            };
+        }
+
+        private static string TableString(Outlook.Row row, string name)
+        {
+            try { return Convert.ToString(row[name]) ?? ""; } catch { return ""; }
+        }
+
+        private static bool TableBool(Outlook.Row row, string name)
+        {
+            try
+            {
+                var value = row[name];
+                if (value is bool b) return b;
+                return bool.TryParse(Convert.ToString(value), out var parsed) && parsed;
+            }
+            catch { return false; }
+        }
+
+        private static int TableInt(Outlook.Row row, string name)
+        {
+            try
+            {
+                var value = row[name];
+                if (value is int i) return i;
+                return int.TryParse(Convert.ToString(value), out var parsed) ? parsed : 0;
+            }
+            catch { return 0; }
+        }
+
+        private static DateTime? TableDate(Outlook.Row row, string name)
+        {
+            try
+            {
+                var value = row[name];
+                if (value is DateTime dt) return dt;
+                return DateTime.TryParse(Convert.ToString(value), out var parsed) ? parsed : (DateTime?)null;
+            }
+            catch { return null; }
         }
 
         private Outlook.MAPIFolder GetFolderByPath(string path)
