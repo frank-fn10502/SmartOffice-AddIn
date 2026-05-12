@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using OutlookAddIn.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace OutlookAddIn

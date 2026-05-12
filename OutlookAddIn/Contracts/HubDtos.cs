@@ -1,29 +1,8 @@
 using System;
 using System.Collections.Generic;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.Contracts
 {
-    /// <summary>
-    /// Provides BaseUrl configuration.
-    /// All Outlook data push/poll and chat is now done via SignalRClient.
-    /// </summary>
-    public static class HubClient
-    {
-        private static string GetBaseUrlFromSettings()
-        {
-            try
-            {
-                var obj = Properties.Settings.Default["HubBaseUrl"];
-                var s = obj as string;
-                if (!string.IsNullOrEmpty(s)) return s;
-            }
-            catch { }
-            return "http://localhost:2805";
-        }
-
-        public static string BaseUrl { get; set; } = GetBaseUrlFromSettings();
-    }
-
     public class FetchMailsRequest
     {
         public string FolderPath { get; set; }
@@ -59,9 +38,9 @@ namespace OutlookAddIn
         public string Categories { get; set; }
         public bool IsRead { get; set; }
         public bool IsMarkedAsTask { get; set; }
-        // Mail list header Åã¥Ü¥Î¡F¥¼ª¾®É¬° 0¡A§¹¾ã metadata ¥H fetch_mail_attachments ¬°·Ç¡C
+        // Mail list header ï¿½ï¿½Ü¥Î¡Fï¿½ï¿½ï¿½ï¿½ï¿½É¬ï¿½ 0ï¿½Aï¿½ï¿½ï¿½ï¿½ metadata ï¿½H fetch_mail_attachments ï¿½ï¿½ï¿½Ç¡C
         public int AttachmentCount { get; set; }
-        // Mail list header Åã¥Ü¥Î¡A¦h­Óªþ¥ó¦WºÙ¥H ", " ¦ê±µ¡FÁ×§K©ñ¤JÀÉ®×¤º®e©Î¥»¾÷¸ô®|¡C
+        // Mail list header ï¿½ï¿½Ü¥Î¡Aï¿½hï¿½Óªï¿½ï¿½ï¿½Wï¿½Ù¥H ", " ï¿½ê±µï¿½Fï¿½×§Kï¿½ï¿½Jï¿½É®×¤ï¿½ï¿½eï¿½Î¥ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½|ï¿½C
         public string AttachmentNames { get; set; }
         public string FlagRequest { get; set; }
         public string FlagInterval { get; set; }

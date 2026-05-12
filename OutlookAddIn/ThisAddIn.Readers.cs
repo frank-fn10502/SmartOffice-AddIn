@@ -1,4 +1,5 @@
 using System;
+using OutlookAddIn.Contracts;
 
 namespace OutlookAddIn
 {

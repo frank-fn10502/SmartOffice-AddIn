@@ -321,18 +321,21 @@
     can be found.
   -->
   <ItemGroup>
-    <Compile Include="ChatPane.cs">
+    <Compile Include="UI\ChatPane.cs">
       <SubType>UserControl</SubType>
     </Compile>
-    <Compile Include="ChatPane.Designer.cs">
+    <Compile Include="UI\ChatPane.Designer.cs">
       <DependentUpon>ChatPane.cs</DependentUpon>
     </Compile>
-    <Compile Include="FolderFilter.cs" />
-    <Compile Include="HubClient.cs" />
+    <Compile Include="Clients\HubClient.cs" />
+    <Compile Include="Clients\SignalRClient.cs" />
+    <Compile Include="Contracts\HubDtos.cs" />
+    <Compile Include="Contracts\OutlookCommands.cs" />
+    <Compile Include="Domain\Folders\FolderFilter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="SignalRClient.cs" />
+    <Compile Include="Ribbon\SmartOfficeRibbon.cs" />
     <Compile Include="ThisAddIn.Calendar.cs" />
     <Compile Include="ThisAddIn.Categories.cs" />
     <Compile Include="ThisAddIn.FolderMails.cs" />
@@ -343,7 +346,7 @@
     <Compile Include="ThisAddIn.Readers.cs" />
     <Compile Include="ThisAddIn.Rules.cs" />
     <Compile Include="ThisAddIn.Search.cs" />
-    <EmbeddedResource Include="ChatPane.resx">
+    <EmbeddedResource Include="UI\ChatPane.resx">
       <DependentUpon>ChatPane.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
@@ -365,7 +368,6 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
-    <Compile Include="SmartOfficeRibbon.cs" />
     <Compile Include="ThisAddIn.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -378,7 +380,7 @@
     <AppDesigner Include="Properties\" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="SmartOfficeRibbon.xml" />
+    <EmbeddedResource Include="Ribbon\SmartOfficeRibbon.xml" />
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>

@@ -1,4 +1,5 @@
-using OutlookAddIn;
+using OutlookAddIn.Contracts;
+using OutlookAddIn.Domain.Folders;
 
 namespace OutlookAddIn.Tests
 {

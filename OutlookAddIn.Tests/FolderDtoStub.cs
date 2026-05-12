@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.Contracts
 {
     /// <summary>
     /// Minimal FolderDto stub for test project.
-    /// Mirrors the definition in HubClient.cs without pulling in Framework-only dependencies.
+    /// Mirrors the definition in Contracts/HubDtos.cs without pulling in Framework-only dependencies.
     /// </summary>
     public class FolderDto
     {

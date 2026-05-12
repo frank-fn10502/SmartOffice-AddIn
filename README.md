@@ -88,4 +88,4 @@ dotnet run
 
 Hub runs on `http://localhost:2805` (configured in `SmartOffice.Hub/Properties/launchSettings.json`).
 
-If you change the port, also update `OutlookAddIn/HubClient.cs` > `BaseUrl`.
+If you change the port, also update `OutlookAddIn/Clients/HubClient.cs` > `BaseUrl`.

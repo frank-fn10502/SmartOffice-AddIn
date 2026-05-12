@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Threading.Tasks;
+using OutlookAddIn.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace OutlookAddIn

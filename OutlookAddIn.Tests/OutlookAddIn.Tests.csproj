@@ -22,7 +22,7 @@
 
   <!-- Link source files from OutlookAddIn that are pure logic (no COM dependency) -->
   <ItemGroup>
-    <Compile Include="..\OutlookAddIn\FolderFilter.cs" Link="FolderFilter.cs" />
+    <Compile Include="..\OutlookAddIn\Domain\Folders\FolderFilter.cs" Link="Domain\Folders\FolderFilter.cs" />
   </ItemGroup>
 
 </Project>

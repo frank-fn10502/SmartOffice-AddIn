@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Office = Microsoft.Office.Core;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.Ribbon
 {
     [ComVisible(true)]
     public class SmartOfficeRibbon : Office.IRibbonExtensibility
@@ -14,13 +14,17 @@ namespace OutlookAddIn
         public string GetCustomUI(string ribbonID)
         {
             var asm = Assembly.GetExecutingAssembly();
-            using (var stream = asm.GetManifestResourceStream("OutlookAddIn.SmartOfficeRibbon.xml"))
+            using (var stream = asm.GetManifestResourceStream("OutlookAddIn.Ribbon.SmartOfficeRibbon.xml")
+                ?? asm.GetManifestResourceStream("OutlookAddIn.SmartOfficeRibbon.xml"))
             {
                 if (stream == null)
                 {
                     // Fallback: read from file next to assembly
                     var dir = Path.GetDirectoryName(asm.Location);
-                    return File.ReadAllText(Path.Combine(dir, "SmartOfficeRibbon.xml"));
+                    var ribbonPath = Path.Combine(dir, "Ribbon", "SmartOfficeRibbon.xml");
+                    if (!File.Exists(ribbonPath))
+                        ribbonPath = Path.Combine(dir, "SmartOfficeRibbon.xml");
+                    return File.ReadAllText(ribbonPath);
                 }
                 using (var reader = new StreamReader(stream))
                     return reader.ReadToEnd();

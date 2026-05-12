@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
+using OutlookAddIn.Contracts;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.Domain.Folders
 {
     /// <summary>
     /// Pure logic for determining which Outlook folders to include or skip.
@@ -55,8 +56,8 @@ namespace OutlookAddIn
             // Spooler Queue
             "Spooler Queue",
             // Public folders (Chinese/English variants)
-            "¤½¥Î¸ê®Æ§¨",
-            "¤½¥Î¤å¥ó§¨",
+            "ï¿½ï¿½ï¿½Î¸ï¿½Æ§ï¿½",
+            "ï¿½ï¿½ï¿½Î¤ï¿½ï¿½",
             "Public Folders",
             "?ffentliche Ordner",
             "Dossiers publics",

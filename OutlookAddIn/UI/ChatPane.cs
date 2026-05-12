@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using OutlookAddIn.Clients;
+using OutlookAddIn.Contracts;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.UI
 {
     public partial class ChatPane : UserControl
     {

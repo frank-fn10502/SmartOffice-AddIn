@@ -17,9 +17,11 @@
 - `SmartOffice.sln`：Windows 主機上開啟的 solution。
 - `OutlookAddIn/`：.NET Framework 4.8 VSTO Outlook Add-in。
 - `OutlookAddIn/ThisAddIn*.cs`：Outlook lifecycle、folders、mails、rules、calendar、categories、readers、search、polling 等實作切分。
-- `OutlookAddIn/HubClient.cs`、`SignalRClient.cs`：與 Hub 溝通的 client layer。
-- `OutlookAddIn/ChatPane*.cs`：Outlook task pane UI。
-- `OutlookAddIn/SmartOfficeRibbon.*`：Ribbon button 與 UI entry point。
+- `OutlookAddIn/Clients/`：`HubClient`、`SignalRClient` 等與 Hub 溝通的 client layer。
+- `OutlookAddIn/Contracts/`：Hub/SignalR command、request、push result DTO；更改前需同步檢查 Hub contract。
+- `OutlookAddIn/Domain/Folders/`：不依賴 COM/VSTO 的 folder 純邏輯，例如 `FolderFilter`。
+- `OutlookAddIn/UI/`：Outlook task pane UI，例如 `ChatPane*.cs`。
+- `OutlookAddIn/Ribbon/`：Ribbon button 與 UI entry point，例如 `SmartOfficeRibbon.*`。
 - `OutlookAddIn.Tests/`：不依賴 COM/VSTO 的純邏輯測試，目前用 xUnit / .NET 8 測 `FolderFilter` 這類可抽離邏輯。
 - `docs/outlook-addin/`：Outlook Add-in 實作者文件、SignalR contract、功能 checklist、官方文件入口與工作機測試回報格式。
 
