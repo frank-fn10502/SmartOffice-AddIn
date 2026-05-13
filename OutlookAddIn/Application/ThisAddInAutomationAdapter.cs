@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using OutlookAddIn.Outlook.Categories;
+using OutlookAddIn.OutlookServices.Categories;
 using SmartOffice.Hub.Contracts;
 
 namespace OutlookAddIn.Application
