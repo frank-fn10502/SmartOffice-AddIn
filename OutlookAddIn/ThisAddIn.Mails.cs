@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using SmartOffice.Hub.Contracts;
@@ -9,6 +10,9 @@ namespace OutlookAddIn
 {
     public partial class ThisAddIn
     {
+        private const int FetchMailsMaxCount = 100;
+        private static readonly TimeSpan FetchMailsTableBudget = TimeSpan.FromSeconds(8);
+
         /// <summary>
         /// Builds an OutlookRecipientDto from a resolved Outlook Recipient COM object.
         /// Caller is responsible for releasing the COM object.
@@ -490,13 +494,24 @@ namespace OutlookAddIn
 
         public List<MailItemDto> ReadMails(FetchMailsRequest req)
         {
-            var mails = new List<MailItemDto>();
+            List<MailItemDto> mails;
+            string error;
+            if (TryReadMailsFast(req, out mails, out error)) return mails;
+
+            System.Diagnostics.Debug.WriteLine("ReadMails error: " + error);
+            return mails ?? new List<MailItemDto>();
+        }
+
+        public bool TryReadMailsFast(FetchMailsRequest req, out List<MailItemDto> mails, out string error)
+        {
+            mails = new List<MailItemDto>();
+            error = "";
+            Outlook.MAPIFolder folder = null;
             try
             {
                 int maxCount = req.MaxCount > 0 ? req.MaxCount : 100;
-                if (maxCount > 500) maxCount = 500;
+                if (maxCount > FetchMailsMaxCount) maxCount = FetchMailsMaxCount;
 
-                Outlook.MAPIFolder folder = null;
                 if (string.IsNullOrEmpty(req.FolderPath))
                 {
                     folder = this.Application.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox);
@@ -508,8 +523,9 @@ namespace OutlookAddIn
 
                 if (folder == null)
                 {
+                    error = "folder_not_found";
                     System.Diagnostics.Debug.WriteLine("ReadMails: folder is null for path: " + req.FolderPath);
-                    return mails;
+                    return false;
                 }
 
                 // Determine date range: Hub sends receivedFrom/receivedTo directly.
@@ -560,60 +576,21 @@ namespace OutlookAddIn
                 string currentFolderPath = "";
                 try { currentFolderPath = folder.FolderPath ?? ""; } catch { }
 
-                if (TryReadMailsFromTable(folder, currentFolderPath, filterExpr, maxCount, mails))
-                {
-                    try { Marshal.ReleaseComObject(folder); } catch { }
-                    return mails;
-                }
+                if (!TryReadMailsFromTable(folder, currentFolderPath, filterExpr, maxCount, mails, out error))
+                    return false;
 
-                var items = folder.Items;
-
-                // Apply Restrict first, then Sort the filtered collection.
-                // Sorting before Restrict can cause COM exceptions and the restricted
-                // collection does not inherit the sort order.
-                Outlook.Items filtered = filterExpr != null ? items.Restrict(filterExpr) : items;
-                filtered.Sort("[ReceivedTime]", true);
-
-                int count = 0;
-                foreach (var obj in filtered)
-                {
-                    if (count >= maxCount) break;
-
-                    var mail = obj as Outlook.MailItem;
-                    if (mail == null)
-                    {
-                        if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { }
-                        continue;
-                    }
-
-                    try
-                    {
-                        var dto = ReadMailListMetadataDto(mail, currentFolderPath);
-                        if (dto != null)
-                        {
-                            mails.Add(dto);
-                            count++;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine("ReadMails: failed to convert one mail: " + ex.Message);
-                    }
-                    finally
-                    {
-                        try { Marshal.ReleaseComObject(mail); } catch { }
-                    }
-                }
-
-                if (filtered != items) try { Marshal.ReleaseComObject(filtered); } catch { }
-                try { Marshal.ReleaseComObject(items); } catch { }
-                try { Marshal.ReleaseComObject(folder); } catch { }
+                return true;
             }
             catch (Exception ex)
             {
+                error = SanitizeExceptionForLog(ex);
                 System.Diagnostics.Debug.WriteLine("ReadMails error: " + ex);
             }
-            return mails;
+            finally
+            {
+                if (folder != null) try { Marshal.ReleaseComObject(folder); } catch { }
+            }
+            return false;
         }
 
         private bool TryReadMailsFromTable(
@@ -621,11 +598,14 @@ namespace OutlookAddIn
             string folderPath,
             string filterExpr,
             int maxCount,
-            List<MailItemDto> mails)
+            List<MailItemDto> mails,
+            out string error)
         {
+            error = "";
             Outlook.Table table = null;
             try
             {
+                var stopwatch = Stopwatch.StartNew();
                 table = folder.GetTable(filterExpr ?? "", Outlook.OlTableContents.olUserItems);
                 TryResetTableColumns(table,
                     "EntryID",
@@ -648,6 +628,12 @@ namespace OutlookAddIn
                 int count = 0;
                 while (!table.EndOfTable && count < maxCount)
                 {
+                    if (stopwatch.Elapsed > FetchMailsTableBudget)
+                    {
+                        error = "fetch_mails timed out while reading Outlook table metadata";
+                        return false;
+                    }
+
                     Outlook.Row row = null;
                     try
                     {
@@ -664,7 +650,8 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("TryReadMailsFromTable fallback: " + ex.Message);
+                error = SanitizeExceptionForLog(ex);
+                System.Diagnostics.Debug.WriteLine("TryReadMailsFromTable failed: " + ex.Message);
                 mails.Clear();
                 return false;
             }

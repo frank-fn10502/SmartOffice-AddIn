@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Office.Tools;
@@ -17,6 +18,7 @@ namespace OutlookAddIn
         private ChatPane _chatPane;
         private SmartOfficeRibbon _ribbon;
         private SignalRClient _signalRClient;
+        private readonly SemaphoreSlim _commandGate = new SemaphoreSlim(1, 1);
 
         private void ThisAddIn_Startup(object sender, System.EventArgs e)
         {
@@ -61,30 +63,48 @@ namespace OutlookAddIn
         }
 
         /// <summary>
-        /// Dispatches incoming OutlookCommand from Hub.
-        /// Heavy Outlook COM work is marshalled back to the UI thread via BeginInvoke
-        /// to avoid freezing the STA thread.
+        /// 接收 Hub 傳來的 OutlookCommand。
+        /// Outlook COM work 仍回到 UI thread 執行；AddIn 自己也只允許同時處理一個 command。
         /// </summary>
         private async Task OnCommandReceivedAsync(OutlookCommand cmd)
         {
-            // Marshal to UI thread for COM access
-            var tcs = new TaskCompletionSource<bool>();
-            _chatPane.BeginInvoke((Action)(async () =>
+            if (!_commandGate.Wait(0))
             {
                 try
                 {
-                    await HandleCommandAsync(cmd);
+                    await _signalRClient.ReportCommandResultAsync(
+                        cmd.Id,
+                        false,
+                        "addin_busy: previous Outlook command is still running");
                 }
-                catch (Exception ex)
+                catch { }
+                return;
+            }
+
+            try
+            {
+                var tcs = new TaskCompletionSource<bool>();
+                _chatPane.BeginInvoke((Action)(async () =>
                 {
-                    try { await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "Error: " + SanitizeExceptionForLog(ex)); } catch { }
-                }
-                finally
-                {
-                    tcs.TrySetResult(true);
-                }
-            }));
-            await tcs.Task;
+                    try
+                    {
+                        await HandleCommandAsync(cmd);
+                    }
+                    catch (Exception ex)
+                    {
+                        try { await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "Error: " + SanitizeExceptionForLog(ex)); } catch { }
+                    }
+                    finally
+                    {
+                        tcs.TrySetResult(true);
+                    }
+                }));
+                await tcs.Task;
+            }
+            finally
+            {
+                _commandGate.Release();
+            }
         }
 
         private async Task HandleCommandAsync(OutlookCommand cmd)
@@ -125,9 +145,15 @@ namespace OutlookAddIn
                             ReceivedFrom = mr?.ReceivedFrom,
                             ReceivedTo = mr?.ReceivedTo
                         };
-                        if (mailReq.MaxCount > 500) mailReq.MaxCount = 500;
+                        if (mailReq.MaxCount > FetchMailsMaxCount) mailReq.MaxCount = FetchMailsMaxCount;
 
-                        List<MailItemDto> mails = ReadMails(mailReq);
+                        List<MailItemDto> mails;
+                        string readError;
+                        if (!TryReadMailsFast(mailReq, out mails, out readError))
+                        {
+                            await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mails error: " + readError);
+                            break;
+                        }
 
                         await _signalRClient.PushMailsAsync(mails ?? new List<MailItemDto>());
                         await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_mails completed. Items: " + (mails?.Count ?? 0));
