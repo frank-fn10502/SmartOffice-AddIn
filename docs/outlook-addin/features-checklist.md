@@ -43,6 +43,7 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 | Master categories | `fetch_categories`、`upsert_category` | `PushCategories` |
 | Rules snapshot / mutation | `fetch_rules`、`manage_rule` | `PushRules` |
 | 月曆 | `fetch_calendar` | `PushCalendar` |
+| 通訊錄 | `fetch_address_book` | `PushAddressBook` |
 | Chat | `SendChatMessage` SignalR server method | `ReportCommandResult` 不適用；method invoke 成功即可 |
 | Folder 建立 / 刪除 | `create_folder`、`delete_folder` | folder 增量同步，必要時 `PushMails`；`delete_folder` 是 move to Outlook default Deleted Items folder |
 
@@ -267,7 +268,22 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 - [ ] 回推的 event 落在 requested date range 內。
 - [ ] Event 欄位包含 subject、時間、location、organizer、attendees、busy status。
 
-### 10. Rules Snapshot / Mutation
+### 10. Address Book 通訊錄
+
+- [ ] AddIn 收到 `fetch_address_book`。
+- [ ] 讀取 Outlook default Contacts folder 的 `ContactItem` metadata。
+- [ ] 在設定允許時讀取 `Application.Session.AddressLists` 中可用的 Outlook address list / GAL metadata。
+- [ ] 尊重 `addressBookRequest.maxContacts` 與 `maxAddressEntriesPerList`，不得無限制枚舉大型 GAL。
+- [ ] 回推 `PushAddressBook(contacts)`；不得讀取 mail body。
+- [ ] 完成後回報 `ReportCommandResult`。
+
+驗收：
+
+- [ ] Web UI 通訊錄同步後可查到 Outlook Contacts / GAL 來源的 contact。
+- [ ] 若 Exchange / GAL 無法離線讀取，AddIn 仍回報清楚錯誤或至少回傳 Contacts folder 結果。
+- [ ] Windows 主機實測確認 Outlook UI 沒有長時間卡住。
+
+### 11. Rules Snapshot / Mutation
 
 - [ ] AddIn 收到 `fetch_rules`。
 - [ ] 讀取 Outlook rules snapshot。
