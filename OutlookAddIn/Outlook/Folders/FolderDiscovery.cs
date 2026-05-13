@@ -87,6 +87,27 @@ namespace OutlookAddIn
             return OutlookFolderType.OtherSystem;
         }
 
+        private static int ReadFolderMailCount(Outlook.MAPIFolder folder, int defaultItemType)
+        {
+            if (folder == null || defaultItemType != (int)Outlook.OlItemType.olMailItem)
+                return 0;
+
+            Outlook.Items items = null;
+            try
+            {
+                items = folder.Items;
+                return items?.Count ?? 0;
+            }
+            catch
+            {
+                return 0;
+            }
+            finally
+            {
+                if (items != null) try { Marshal.ReleaseComObject(items); } catch { }
+            }
+        }
+
         // ????????????????????????????????????????????????????????????????????????????????
         // fetch_folder_roots: list all Outlook stores + each store root folder only.
         // ????????????????????????????????????????????????????????????????????????????????
@@ -243,6 +264,7 @@ namespace OutlookAddIn
 
                         int rootDefaultItemType = -1;
                         try { rootDefaultItemType = (int)root.DefaultItemType; } catch { }
+                        int rootMailCount = ReadFolderMailCount(root, rootDefaultItemType);
                         bool rootIsHidden = ReadMapiBoolean(root, MapiPropAttrHidden);
                         bool rootIsSystem = ReadMapiBoolean(root, MapiPropAttrSystem);
 
@@ -262,7 +284,7 @@ namespace OutlookAddIn
                             FolderPath = rootPath,
                             ParentEntryId = "",
                             ParentFolderPath = "",
-                            ItemCount = 0,
+                            ItemCount = rootMailCount,
                             StoreId = storeId,
                             IsStoreRoot = true,
                             FolderType = OutlookFolderType.StoreRoot,
@@ -358,6 +380,7 @@ namespace OutlookAddIn
 
                 int parentDefaultItemType = -1;
                 try { parentDefaultItemType = (int)parent.DefaultItemType; } catch { }
+                int parentMailCount = ReadFolderMailCount(parent, parentDefaultItemType);
                 bool parentIsHidden = ReadMapiBoolean(parent, MapiPropAttrHidden);
                 bool parentIsSystem = ReadMapiBoolean(parent, MapiPropAttrSystem);
                 bool parentIsStoreRoot = string.IsNullOrEmpty(grandParentFolderPath);
@@ -380,7 +403,7 @@ namespace OutlookAddIn
                     FolderPath = parentFolderPath,
                     ParentEntryId = grandParentEntryId,
                     ParentFolderPath = grandParentFolderPath,
-                    ItemCount = 0,
+                    ItemCount = parentMailCount,
                     StoreId = parentStoreId,
                     IsStoreRoot = parentIsStoreRoot,
                     FolderType = LookupFolderType(folderTypeMap, parentEntryId, parentIsStoreRoot, parentDefaultItemType),
@@ -407,13 +430,12 @@ namespace OutlookAddIn
                             string entryId = "";
                             try { entryId = sub.EntryID ?? ""; } catch { }
                             string folderPath = sub.FolderPath ?? "";
-                            int itemCount = 0;
-                            try { itemCount = sub.Items.Count; } catch { }
                             bool hasChildren = false;
                             try { hasChildren = sub.Folders.Count > 0; } catch { }
 
                             int subDefaultItemType = -1;
                             try { subDefaultItemType = (int)sub.DefaultItemType; } catch { }
+                            int subMailCount = ReadFolderMailCount(sub, subDefaultItemType);
                             bool subIsHidden = ReadMapiBoolean(sub, MapiPropAttrHidden);
                             bool subIsSystem = ReadMapiBoolean(sub, MapiPropAttrSystem);
 
@@ -424,7 +446,7 @@ namespace OutlookAddIn
                                 FolderPath = folderPath,
                                 ParentEntryId = parentEntryId,
                                 ParentFolderPath = parentFolderPath,
-                                ItemCount = itemCount,
+                                ItemCount = subMailCount,
                                 StoreId = parentStoreId,
                                 IsStoreRoot = false,
                                 FolderType = LookupFolderType(folderTypeMap, entryId, false, subDefaultItemType),
@@ -572,12 +594,11 @@ namespace OutlookAddIn
                         string parentEntryId = "";
                         string parentFolderPath = "";
                         try { var gp = f.Parent as Outlook.MAPIFolder; if (gp != null) { parentEntryId = gp.EntryID ?? ""; parentFolderPath = gp.FolderPath ?? ""; Marshal.ReleaseComObject(gp); } } catch { }
-                        int itemCount = 0;
-                        try { itemCount = f.Items.Count; } catch { }
                         bool hasChildren = false;
                         try { hasChildren = f.Folders.Count > 0; } catch { }
                         int syncDefaultItemType = -1;
                         try { syncDefaultItemType = (int)f.DefaultItemType; } catch { }
+                        int syncMailCount = ReadFolderMailCount(f, syncDefaultItemType);
 
                         var syncTypeMap = new Dictionary<string, OutlookFolderType>(StringComparer.OrdinalIgnoreCase);
                         Outlook.Store syncStore = null;
@@ -592,7 +613,7 @@ namespace OutlookAddIn
                             FolderPath = path,
                             ParentEntryId = parentEntryId,
                             ParentFolderPath = parentFolderPath,
-                            ItemCount = itemCount,
+                            ItemCount = syncMailCount,
                             StoreId = storeId,
                             IsStoreRoot = false,
                             FolderType = LookupFolderType(syncTypeMap, entryId, false, syncDefaultItemType),
