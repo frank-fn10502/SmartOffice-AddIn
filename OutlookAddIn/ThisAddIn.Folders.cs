@@ -608,7 +608,10 @@ namespace OutlookAddIn
 
                 // If no specific folder was given, fall back to store roots only
                 if (folders.Count == 0)
-                    ReadStoreRoots(out stores, out var rootFolders2);
+                {
+                    List<FolderDto> rootFolders2;
+                    ReadStoreRoots(out stores, out rootFolders2);
+                }
             }));
 
             await _signalRClient.PushFolderBatchAsync(new FolderSyncBatchDto

@@ -758,7 +758,8 @@ namespace OutlookAddIn
             {
                 var value = row[name];
                 if (value is bool b) return b;
-                return bool.TryParse(Convert.ToString(value), out var parsed) && parsed;
+                bool parsed;
+                return bool.TryParse(Convert.ToString(value), out parsed) && parsed;
             }
             catch { return false; }
         }
@@ -769,7 +770,8 @@ namespace OutlookAddIn
             {
                 var value = row[name];
                 if (value is int i) return i;
-                return int.TryParse(Convert.ToString(value), out var parsed) ? parsed : 0;
+                int parsed;
+                return int.TryParse(Convert.ToString(value), out parsed) ? parsed : 0;
             }
             catch { return 0; }
         }
@@ -780,7 +782,8 @@ namespace OutlookAddIn
             {
                 var value = row[name];
                 if (value is DateTime dt) return dt;
-                return DateTime.TryParse(Convert.ToString(value), out var parsed) ? parsed : (DateTime?)null;
+                DateTime parsed;
+                return DateTime.TryParse(Convert.ToString(value), out parsed) ? parsed : (DateTime?)null;
             }
             catch { return null; }
         }
