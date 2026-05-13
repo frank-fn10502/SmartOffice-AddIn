@@ -329,8 +329,6 @@
     </Compile>
     <Compile Include="Clients\HubClient.cs" />
     <Compile Include="Clients\SignalRClient.cs" />
-    <Compile Include="Contracts\HubDtos.cs" />
-    <Compile Include="Contracts\OutlookCommands.cs" />
     <Compile Include="Domain\Folders\FolderFilter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
@@ -381,6 +379,12 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Ribbon\SmartOfficeRibbon.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\SmartOffice.Hub\SmartOffice.Hub.Contracts\SmartOffice.Hub.Contracts.csproj">
+      <Project>{3A6083E7-2EF4-4F89-8D58-5AE7162BE5C4}</Project>
+      <Name>SmartOffice.Hub.Contracts</Name>
+    </ProjectReference>
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>

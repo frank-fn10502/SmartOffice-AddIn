@@ -18,7 +18,7 @@
 - `OutlookAddIn/`：.NET Framework 4.8 VSTO Outlook Add-in。
 - `OutlookAddIn/ThisAddIn*.cs`：Outlook lifecycle、folders、mails、rules、calendar、categories、readers、search、polling 等實作切分。
 - `OutlookAddIn/Clients/`：`HubClient`、`SignalRClient` 等與 Hub 溝通的 client layer。
-- `OutlookAddIn/Contracts/`：Hub/SignalR command、request、push result DTO；更改前需同步檢查 Hub contract。
+- `../SmartOffice.Hub/SmartOffice.Hub.Contracts/`：Hub-owned SignalR command、request、push result DTO；Add-in 以 project/package reference 使用，不在本 repo 另維護 DTO copy。
 - `OutlookAddIn/Domain/Folders/`：不依賴 COM/VSTO 的 folder 純邏輯，例如 `FolderFilter`。
 - `OutlookAddIn/UI/`：Outlook task pane UI，例如 `ChatPane*.cs`。
 - `OutlookAddIn/Ribbon/`：Ribbon button 與 UI entry point，例如 `SmartOfficeRibbon.*`。
@@ -41,6 +41,7 @@
 - `docs/outlook-addin/signalr-contract.md`
 - `docs/outlook-addin/features-checklist.md`
 - `../SmartOffice.Hub/docs/ai/protocols.md`
+- `../SmartOffice.Hub/SmartOffice.Hub.Contracts/`
 
 ## 修改原則
 

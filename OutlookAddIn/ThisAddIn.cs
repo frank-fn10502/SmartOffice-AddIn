@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Office.Tools;
 using OutlookAddIn.Clients;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 using OutlookAddIn.Ribbon;
 using OutlookAddIn.UI;
 using Office = Microsoft.Office.Core;

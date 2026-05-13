@@ -20,6 +20,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\SmartOffice.Hub\SmartOffice.Hub.Contracts\SmartOffice.Hub.Contracts.csproj" />
+  </ItemGroup>
+
   <!-- Link source files from OutlookAddIn that are pure logic (no COM dependency) -->
   <ItemGroup>
     <Compile Include="..\OutlookAddIn\Domain\Folders\FolderFilter.cs" Link="Domain\Folders\FolderFilter.cs" />

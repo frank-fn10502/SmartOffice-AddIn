@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 
 namespace OutlookAddIn.Clients
 {

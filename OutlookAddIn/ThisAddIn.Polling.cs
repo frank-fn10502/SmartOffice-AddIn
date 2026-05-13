@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace OutlookAddIn

@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using OutlookAddIn.Clients;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 
 namespace OutlookAddIn.UI
 {

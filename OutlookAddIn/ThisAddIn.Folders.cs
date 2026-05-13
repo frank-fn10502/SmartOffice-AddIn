@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace OutlookAddIn
@@ -49,15 +49,15 @@ namespace OutlookAddIn
             Outlook.OlDefaultFolders.olFolderOutbox,
         };
 
-        private static readonly string[] s_knownDefaultFolderTypes = new[]
+        private static readonly OutlookFolderType[] s_knownDefaultFolderTypes = new[]
         {
-            "Inbox", "Sent", "Drafts", "Deleted", "Junk",
-            "Calendar", "Contacts", "Tasks", "Outbox",
+            OutlookFolderType.Inbox, OutlookFolderType.Sent, OutlookFolderType.Drafts, OutlookFolderType.Deleted, OutlookFolderType.Junk,
+            OutlookFolderType.Calendar, OutlookFolderType.Contacts, OutlookFolderType.Tasks, OutlookFolderType.Outbox,
         };
 
-        private Dictionary<string, string> BuildStoreFolderTypeMap(Outlook.Store store)
+        private Dictionary<string, OutlookFolderType> BuildStoreFolderTypeMap(Outlook.Store store)
         {
-            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var map = new Dictionary<string, OutlookFolderType>(StringComparer.OrdinalIgnoreCase);
             if (store == null) return map;
             for (int i = 0; i < s_knownDefaultFolders.Length; i++)
             {
@@ -77,14 +77,14 @@ namespace OutlookAddIn
             return map;
         }
 
-        private static string LookupFolderType(
-            Dictionary<string, string> typeMap, string entryId, bool isStoreRoot, int defaultItemType)
+        private static OutlookFolderType LookupFolderType(
+            Dictionary<string, OutlookFolderType> typeMap, string entryId, bool isStoreRoot, int defaultItemType)
         {
-            if (isStoreRoot) return "StoreRoot";
+            if (isStoreRoot) return OutlookFolderType.StoreRoot;
             if (!string.IsNullOrEmpty(entryId) && typeMap != null &&
-                typeMap.TryGetValue(entryId, out string t)) return t;
-            if (defaultItemType == 0) return "Mail";
-            return "OtherSystem";
+                typeMap.TryGetValue(entryId, out OutlookFolderType t)) return t;
+            if (defaultItemType == 0) return OutlookFolderType.Mail;
+            return OutlookFolderType.OtherSystem;
         }
 
         // ????????????????????????????????????????????????????????????????????????????????
@@ -265,7 +265,7 @@ namespace OutlookAddIn
                             ItemCount = 0,
                             StoreId = storeId,
                             IsStoreRoot = true,
-                            FolderType = "StoreRoot",
+                            FolderType = OutlookFolderType.StoreRoot,
                             DefaultItemType = rootDefaultItemType,
                             IsHidden = rootIsHidden,
                             IsSystem = rootIsSystem,
@@ -363,7 +363,7 @@ namespace OutlookAddIn
                 bool parentIsStoreRoot = string.IsNullOrEmpty(grandParentFolderPath);
 
                 // Build folder type map once for this store
-                var folderTypeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var folderTypeMap = new Dictionary<string, OutlookFolderType>(StringComparer.OrdinalIgnoreCase);
                 Outlook.Store parentStore = null;
                 try
                 {
@@ -579,7 +579,7 @@ namespace OutlookAddIn
                         int syncDefaultItemType = -1;
                         try { syncDefaultItemType = (int)f.DefaultItemType; } catch { }
 
-                        var syncTypeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        var syncTypeMap = new Dictionary<string, OutlookFolderType>(StringComparer.OrdinalIgnoreCase);
                         Outlook.Store syncStore = null;
                         try { syncStore = f.Store; syncTypeMap = BuildStoreFolderTypeMap(syncStore); }
                         catch { }

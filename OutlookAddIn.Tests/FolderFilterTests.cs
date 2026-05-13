@@ -1,4 +1,4 @@
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 using OutlookAddIn.Domain.Folders;
 
 namespace OutlookAddIn.Tests

@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 
 namespace OutlookAddIn.Domain.Folders
 {

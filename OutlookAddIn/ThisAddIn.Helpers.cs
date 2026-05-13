@@ -1,6 +1,6 @@
 using System;
 using System.Text.RegularExpressions;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 
 namespace OutlookAddIn
 {

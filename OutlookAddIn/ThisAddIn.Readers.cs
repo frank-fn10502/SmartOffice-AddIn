@@ -1,5 +1,5 @@
 using System;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 
 namespace OutlookAddIn
 {

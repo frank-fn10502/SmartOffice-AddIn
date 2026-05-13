@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.InteropServices;
-using OutlookAddIn.Contracts;
+using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace OutlookAddIn
