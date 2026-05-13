@@ -337,11 +337,14 @@
     <Compile Include="Infrastructure\Threading\OutlookThreadInvoker.cs" />
     <Compile Include="Outlook\Calendar\CalendarReader.cs" />
     <Compile Include="Outlook\Categories\OutlookCategoryReader.cs" />
+    <Compile Include="Outlook\Common\OutlookRecipientDtoBuilder.cs" />
     <Compile Include="Outlook\Folders\FolderDiscovery.cs" />
+    <Compile Include="Outlook\Folders\OutlookFolderLocator.cs" />
     <Compile Include="Outlook\Mail\FolderMailSliceReader.cs" />
     <Compile Include="Outlook\Mail\MailMutationHandlers.cs" />
     <Compile Include="Outlook\Mail\MailReader.cs" />
     <Compile Include="Outlook\Rules\RuleAutomation.cs" />
+    <Compile Include="Outlook\Rules\OutlookRuleReader.cs" />
     <Compile Include="Outlook\Search\MailSearchReader.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>

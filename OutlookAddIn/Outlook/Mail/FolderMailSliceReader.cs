@@ -140,6 +140,7 @@ namespace OutlookAddIn
 
                 string filterExpr = BuildFolderMailsFilter(req.ReceivedFrom, req.ReceivedTo);
                 filtered = filterExpr != null ? items.Restrict(filterExpr) : items;
+                try { filtered.Sort("[ReceivedTime]", true); } catch { }
 
                 foreach (var obj in filtered)
                 {
@@ -287,6 +288,7 @@ namespace OutlookAddIn
 
                 string filterExpr = BuildFolderMailsFilter(req.ReceivedFrom, req.ReceivedTo);
                 filtered = filterExpr != null ? items.Restrict(filterExpr) : items;
+                try { filtered.Sort("[ReceivedTime]", true); } catch { }
 
                 foreach (var obj in filtered)
                 {

@@ -1,356 +1,108 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Reflection;
 using System.Threading.Tasks;
+using OutlookAddIn.Clients;
+using OutlookAddIn.Infrastructure.Diagnostics;
+using OutlookAddIn.Infrastructure.Threading;
+using OutlookAddIn.OutlookServices.Folders;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.OutlookServices.Rules
 {
-    public partial class ThisAddIn
+    internal sealed class OutlookRuleCommandHandler
     {
-        private static readonly HashSet<string> SupportedRuleConditions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Subject",
-            "Body",
-            "SenderAddress",
-            "Category",
-            "HasAttachment"
-        };
+        private readonly SignalRClient _signalRClient;
+        private readonly OutlookThreadInvoker _outlookThread;
+        private readonly Outlook.Application _application;
+        private readonly OutlookRuleReader _ruleReader;
+        private readonly OutlookFolderLocator _folderLocator;
 
-        private static readonly HashSet<string> SupportedRuleActions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        public OutlookRuleCommandHandler(
+            SignalRClient signalRClient,
+            OutlookThreadInvoker outlookThread,
+            Outlook.Application application)
         {
-            "MoveToFolder",
-            "AssignToCategory",
-            "MarkAsTask",
-            "Stop"
-        };
-
-        // Read Outlook Rules with best-effort string summaries for conditions/actions.
-        public List<OutlookRuleDto> ReadRules()
-        {
-            var list = new List<OutlookRuleDto>();
-            Outlook.Stores stores = null;
-            try
-            {
-                stores = this.Application.Session.Stores;
-                if (stores != null)
-                {
-                    for (int i = 1; i <= stores.Count; i++)
-                    {
-                        Outlook.Store store = null;
-                        try
-                        {
-                            store = stores[i];
-                            ReadRulesFromStore(store, list);
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine("ReadRules store error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
-                        }
-                        finally
-                        {
-                            ReleaseComObjectQuietly(store);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("ReadRules error: " + ex);
-            }
-            finally
-            {
-                ReleaseComObjectQuietly(stores);
-            }
-            return list;
+            _signalRClient = signalRClient ?? throw new ArgumentNullException(nameof(signalRClient));
+            _outlookThread = outlookThread ?? throw new ArgumentNullException(nameof(outlookThread));
+            _application = application ?? throw new ArgumentNullException(nameof(application));
+            _ruleReader = new OutlookRuleReader(application);
+            _folderLocator = new OutlookFolderLocator(application);
         }
 
-        private void ReadRulesFromStore(Outlook.Store store, List<OutlookRuleDto> list)
-        {
-            if (store == null || list == null) return;
-
-            Outlook.Rules rules = null;
-            string storeId = "";
-            try
-            {
-                try { storeId = store.StoreID ?? ""; } catch { }
-                rules = store.GetRules();
-                if (rules == null) return;
-
-                for (int i = 1; i <= rules.Count; i++)
-                {
-                    Outlook.Rule rule = null;
-                    try
-                    {
-                        rule = rules[i];
-                        var dto = new OutlookRuleDto
-                        {
-                            StoreId = storeId,
-                            Name = rule.Name ?? "",
-                            Enabled = rule.Enabled,
-                            ExecutionOrder = rule.ExecutionOrder,
-                            RuleType = NormalizeRuleType(rule.RuleType),
-                            IsLocalRule = false,
-                            Conditions = new List<string>(),
-                            Actions = new List<string>(),
-                            Exceptions = new List<string>(),
-                            CanModifyDefinition = true
-                        };
-
-                        bool canModifyDefinition = true;
-                        Outlook.RuleConditions conditions = null;
-                        Outlook.RuleActions actions = null;
-                        Outlook.RuleConditions exceptions = null;
-                        try
-                        {
-                            conditions = rule.Conditions;
-                            AddEnabledRuleParts(conditions, dto.Conditions, SupportedRuleConditions, ref canModifyDefinition);
-
-                            actions = rule.Actions;
-                            AddEnabledRuleParts(actions, dto.Actions, SupportedRuleActions, ref canModifyDefinition);
-
-                            exceptions = rule.Exceptions;
-                            AddEnabledRuleParts(exceptions, dto.Exceptions, null, ref canModifyDefinition);
-                        }
-                        finally
-                        {
-                            ReleaseComObjectQuietly(exceptions);
-                            ReleaseComObjectQuietly(actions);
-                            ReleaseComObjectQuietly(conditions);
-                        }
-
-                        dto.CanModifyDefinition = canModifyDefinition;
-                        list.Add(dto);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine("ReadRules item error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
-                    }
-                    finally
-                    {
-                        ReleaseComObjectQuietly(rule);
-                    }
-                }
-            }
-            finally
-            {
-                ReleaseComObjectQuietly(rules);
-            }
-        }
-
-        private static string NormalizeRuleType(Outlook.OlRuleType ruleType)
-        {
-            return ruleType == Outlook.OlRuleType.olRuleSend ? "send" : "receive";
-        }
-
-        private void AddEnabledRuleParts(
-            object parts,
-            List<string> summaries,
-            HashSet<string> supportedNames,
-            ref bool canModifyDefinition)
-        {
-            if (parts == null || summaries == null) return;
-
-            foreach (var property in parts.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                object value = null;
-                try
-                {
-                    value = property.GetValue(parts);
-                    if (value == null) continue;
-
-                    if (!IsRulePartEnabled(value)) continue;
-
-                    var desc = DescribeComObject(value);
-                    summaries.Add(string.IsNullOrEmpty(desc)
-                        ? property.Name + ": (enabled)"
-                        : property.Name + ": " + desc);
-
-                    if (supportedNames == null || !supportedNames.Contains(property.Name))
-                        canModifyDefinition = false;
-                    if (property.Name.Equals("MoveToFolder", StringComparison.OrdinalIgnoreCase)
-                        && !desc.Contains("FolderPath="))
-                        canModifyDefinition = false;
-                }
-                catch { }
-                finally
-                {
-                    ReleaseComObjectQuietly(value);
-                }
-            }
-        }
-
-        private bool IsRulePartEnabled(object rulePart)
-        {
-            if (rulePart == null) return false;
-            try
-            {
-                var enProp = rulePart.GetType().GetProperty("Enabled");
-                return enProp != null && (bool)enProp.GetValue(rulePart);
-            }
-            catch { return false; }
-        }
-
-        // Describe a COM object (condition/action) by reading simple properties (best-effort).
-        private string DescribeComObject(object comObj)
-        {
-            if (comObj == null) return "";
-            try
-            {
-                var t = comObj.GetType();
-                var parts = new List<string>();
-                foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    try
-                    {
-                        if (p.Name == "Application" || p.Name == "Parent" || p.Name == "Enabled") continue;
-                        object val = null;
-                        try
-                        {
-                            val = p.GetValue(comObj);
-                            if (val == null) continue;
-                            if (Marshal.IsComObject(val))
-                            {
-                                var folder = val as Outlook.MAPIFolder;
-                                if (folder != null && p.Name == "Folder")
-                                {
-                                    string folderPath = "";
-                                    try { folderPath = folder.FolderPath ?? ""; } catch { }
-                                    if (!string.IsNullOrEmpty(folderPath)) parts.Add("FolderPath=" + folderPath);
-                                }
-                                continue;
-                            }
-                            if (val is string s)
-                            {
-                                if (!string.IsNullOrEmpty(s)) parts.Add(p.Name + "=" + s);
-                            }
-                            else if (val is bool b)
-                            {
-                                parts.Add(p.Name + "=" + b.ToString());
-                            }
-                            else if (val is int || val is long || val is double || val is float)
-                            {
-                                parts.Add(p.Name + "=" + val.ToString());
-                            }
-                            else if (val is Array array && array.Length > 0)
-                            {
-                                var arrayParts = new List<string>();
-                                foreach (var item in array)
-                                {
-                                    if (item == null) continue;
-                                    var text = item.ToString();
-                                    if (!string.IsNullOrEmpty(text)) arrayParts.Add(text);
-                                }
-                                if (arrayParts.Count > 0) parts.Add(p.Name + "=" + string.Join(", ", arrayParts));
-                            }
-                        }
-                        finally
-                        {
-                            ReleaseComObjectQuietly(val);
-                        }
-                    }
-                    catch { }
-                }
-                var result = string.Join("; ", parts);
-                if (result.Length > 500) result = result.Substring(0, 500) + "...";
-                return result;
-            }
-            catch { return ""; }
-        }
-
-        private static void ReleaseComObjectQuietly(object obj)
-        {
-            if (obj == null) return;
-            try
-            {
-                if (Marshal.IsComObject(obj)) Marshal.ReleaseComObject(obj);
-            }
-            catch { }
-        }
-
-        // ────────────────────────────────────────────────────────────────────────────────
-        // manage_rule command handler
-        // Supports: upsert, delete, set_enabled
-        // Only conditions/actions creatable via Outlook Rules object model are applied.
-        // ────────────────────────────────────────────────────────────────────────────────
-        internal async Task HandleManageRuleAsync(OutlookCommand cmd)
+        public async Task HandleManageRuleAsync(OutlookCommand cmd)
         {
             var req = cmd.RuleRequest;
             if (req == null || string.IsNullOrEmpty(req.Operation))
             {
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "manage_rule failed: operation is required");
+                    "manage_rule failed: operation is required").ConfigureAwait(false);
                 return;
             }
 
-            Exception ruleEx = null;
-            _chatPane.Invoke((Action)(() =>
-            {
-                try { ApplyManageRule(req); }
-                catch (Exception ex) { ruleEx = ex; }
-            }));
-
-            if (ruleEx != null)
-            {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "manage_rule error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ruleEx));
-                return;
-            }
-
-            // Push updated snapshot
+            List<OutlookRuleDto> updatedRules;
             try
             {
-                List<OutlookRuleDto> updatedRules = null;
-                _chatPane.Invoke((Action)(() => { updatedRules = ReadRules(); }));
-                await _signalRClient.PushRulesAsync(updatedRules ?? new List<OutlookRuleDto>());
+                updatedRules = await _outlookThread.InvokeAsync(() =>
+                {
+                    ApplyManageRule(req);
+                    return _ruleReader.ReadRules();
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
+                    "manage_rule error: " + SensitiveLogSanitizer.Sanitize(ex)).ConfigureAwait(false);
+                return;
+            }
+
+            try
+            {
+                await _signalRClient.PushRulesAsync(updatedRules ?? new List<OutlookRuleDto>()).ConfigureAwait(false);
             }
             catch { }
 
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true,
-                $"manage_rule {req.Operation} completed");
+                $"manage_rule {req.Operation} completed").ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Applies the manage_rule operation on the UI thread.
-        /// Throws on failure; caller translates to ReportCommandResult(success=false).
-        /// </summary>
         private void ApplyManageRule(OutlookCommandRuleRequest req)
         {
             Outlook.Store store = null;
             Outlook.Rules rules = null;
             try
             {
-                // Resolve store: use provided storeId or fall back to default store
                 if (!string.IsNullOrEmpty(req.StoreId))
                 {
-                    var stores = this.Application.Session.Stores;
+                    Outlook.Stores stores = null;
                     try
                     {
-                        foreach (Outlook.Store s in stores)
+                        stores = _application.Session.Stores;
+                        foreach (Outlook.Store candidate in stores)
                         {
-                            string sid = "";
-                            try { sid = s.StoreID ?? ""; } catch { }
-                            if (string.Equals(sid, req.StoreId, StringComparison.OrdinalIgnoreCase))
+                            string storeId = "";
+                            try { storeId = candidate.StoreID ?? ""; } catch { }
+                            if (string.Equals(storeId, req.StoreId, StringComparison.OrdinalIgnoreCase))
                             {
-                                store = s;
+                                store = candidate;
                                 break;
                             }
-                            else
-                            {
-                                try { Marshal.ReleaseComObject(s); } catch { }
-                            }
+
+                            ReleaseComObjectQuietly(candidate);
                         }
                     }
-                    finally { try { Marshal.ReleaseComObject(stores); } catch { } }
+                    finally
+                    {
+                        ReleaseComObjectQuietly(stores);
+                    }
 
                     if (store == null)
                         throw new InvalidOperationException("manage_rule: requested Outlook store was not found");
                 }
 
                 if (store == null)
-                    store = this.Application.Session.DefaultStore;
+                    store = _application.Session.DefaultStore;
 
                 if (store == null)
                     throw new InvalidOperationException("Cannot resolve Outlook store for manage_rule");
@@ -360,7 +112,6 @@ namespace OutlookAddIn
                     throw new InvalidOperationException("GetRules returned null");
 
                 string operation = req.Operation?.ToLower() ?? "";
-
                 switch (operation)
                 {
                     case "upsert":
@@ -376,26 +127,25 @@ namespace OutlookAddIn
                         throw new NotSupportedException($"manage_rule: unsupported operation '{req.Operation}'");
                 }
 
-                // Persist changes; pass false to avoid showing UI dialog
                 rules.Save(false);
             }
             finally
             {
-                if (rules != null) try { Marshal.ReleaseComObject(rules); } catch { }
-                if (store != null) try { Marshal.ReleaseComObject(store); } catch { }
+                ReleaseComObjectQuietly(rules);
+                ReleaseComObjectQuietly(store);
             }
         }
 
         private void ApplyRuleUpsert(Outlook.Rules rules, OutlookCommandRuleRequest req)
         {
-            // Try to find existing rule using originalExecutionOrder first, then originalRuleName
             Outlook.Rule existingRule = null;
             if (req.OriginalExecutionOrder.HasValue && req.OriginalExecutionOrder.Value > 0)
             {
                 try
                 {
-                    var r = rules[req.OriginalExecutionOrder.Value];
-                    if (r != null) existingRule = r;
+                    var rule = rules[req.OriginalExecutionOrder.Value];
+                    if (rule != null)
+                        existingRule = rule;
                 }
                 catch { }
             }
@@ -406,27 +156,31 @@ namespace OutlookAddIn
                 {
                     for (int i = 1; i <= rules.Count; i++)
                     {
-                        Outlook.Rule r = null;
+                        Outlook.Rule rule = null;
                         try
                         {
-                            r = rules[i];
-                            if (string.Equals(r.Name, req.OriginalRuleName, StringComparison.OrdinalIgnoreCase))
+                            rule = rules[i];
+                            if (string.Equals(rule.Name, req.OriginalRuleName, StringComparison.OrdinalIgnoreCase))
                             {
-                                existingRule = r;
+                                existingRule = rule;
                                 break;
                             }
                         }
                         catch { }
-                        finally { if (r != null && !ReferenceEquals(r, existingRule)) try { Marshal.ReleaseComObject(r); } catch { } }
+                        finally
+                        {
+                            if (rule != null && !ReferenceEquals(rule, existingRule))
+                                ReleaseComObjectQuietly(rule);
+                        }
                     }
                 }
                 catch { }
             }
 
-            Outlook.Rule rule = existingRule;
+            Outlook.Rule targetRule = existingRule;
             try
             {
-                if (rule == null)
+                if (targetRule == null)
                 {
                     var ruleName = (req.RuleName ?? "").Trim();
                     if (string.IsNullOrEmpty(ruleName))
@@ -435,25 +189,23 @@ namespace OutlookAddIn
                     var ruleType = string.Equals(req.RuleType, "send", StringComparison.OrdinalIgnoreCase)
                         ? Outlook.OlRuleType.olRuleSend
                         : Outlook.OlRuleType.olRuleReceive;
-                    rule = rules.Create(ruleName, ruleType);
+                    targetRule = rules.Create(ruleName, ruleType);
                 }
                 else if (!string.IsNullOrEmpty(req.RuleName))
                 {
-                    rule.Name = req.RuleName;
+                    targetRule.Name = req.RuleName;
                 }
 
-                rule.Enabled = req.Enabled;
+                targetRule.Enabled = req.Enabled;
                 if (req.ExecutionOrder.HasValue && req.ExecutionOrder.Value > 0)
-                {
-                    rule.ExecutionOrder = req.ExecutionOrder.Value;
-                }
+                    targetRule.ExecutionOrder = req.ExecutionOrder.Value;
 
                 if (req.Conditions != null)
                 {
                     Outlook.RuleConditions conditions = null;
                     try
                     {
-                        conditions = rule.Conditions;
+                        conditions = targetRule.Conditions;
                         ApplyTextRuleCondition(conditions.Subject, req.Conditions.SubjectContains, existingRule != null, "subject");
                         ApplyTextRuleCondition(conditions.Body, req.Conditions.BodyContains, existingRule != null, "body");
                         ApplySenderAddressCondition(conditions.SenderAddress, req.Conditions.SenderAddressContains, existingRule != null);
@@ -471,7 +223,7 @@ namespace OutlookAddIn
                     Outlook.RuleActions actions = null;
                     try
                     {
-                        actions = rule.Actions;
+                        actions = targetRule.Actions;
                         ApplyMoveToFolderAction(actions.MoveToFolder, req.Actions.MoveToFolderPath, existingRule != null);
                         ApplyAssignToCategoryAction(actions.AssignToCategory, req.Actions.AssignCategories, existingRule != null);
                         ApplyMarkAsTaskAction(actions.MarkAsTask, req.Actions.MarkAsTask, existingRule != null);
@@ -485,7 +237,7 @@ namespace OutlookAddIn
             }
             finally
             {
-                ReleaseComObjectQuietly(rule);
+                ReleaseComObjectQuietly(targetRule);
             }
         }
 
@@ -535,7 +287,9 @@ namespace OutlookAddIn
                     SetRulePartEnabled(condition, enabled.Value, "has attachment");
                 }
                 else if (disableWhenEmpty)
+                {
                     SetRulePartEnabled(condition, false, "has attachment");
+                }
             }
             finally
             {
@@ -550,7 +304,7 @@ namespace OutlookAddIn
             {
                 if (!string.IsNullOrEmpty(folderPath))
                 {
-                    destFolder = GetFolderByPath(folderPath);
+                    destFolder = _folderLocator.GetFolderByPath(folderPath);
                     if (destFolder == null)
                         throw new InvalidOperationException("manage_rule upsert: destination folder not found");
 
@@ -633,43 +387,46 @@ namespace OutlookAddIn
         {
             int indexToRemove = -1;
 
-            // Prefer originalExecutionOrder for precise targeting
             if (req.OriginalExecutionOrder.HasValue && req.OriginalExecutionOrder.Value > 0
                 && req.OriginalExecutionOrder.Value <= rules.Count)
             {
-                Outlook.Rule r = null;
+                Outlook.Rule rule = null;
                 try
                 {
-                    r = rules[req.OriginalExecutionOrder.Value];
-                    // Confirm name matches if provided
+                    rule = rules[req.OriginalExecutionOrder.Value];
                     if (string.IsNullOrEmpty(req.OriginalRuleName) ||
-                        string.Equals(r.Name, req.OriginalRuleName, StringComparison.OrdinalIgnoreCase))
+                        string.Equals(rule.Name, req.OriginalRuleName, StringComparison.OrdinalIgnoreCase))
                     {
                         indexToRemove = req.OriginalExecutionOrder.Value;
                     }
                 }
                 catch { }
-                finally { if (r != null) try { Marshal.ReleaseComObject(r); } catch { } }
+                finally
+                {
+                    ReleaseComObjectQuietly(rule);
+                }
             }
 
-            // Fall back to name search
             if (indexToRemove < 0 && !string.IsNullOrEmpty(req.OriginalRuleName ?? req.RuleName))
             {
                 string name = req.OriginalRuleName ?? req.RuleName;
                 for (int i = 1; i <= rules.Count; i++)
                 {
-                    Outlook.Rule r = null;
+                    Outlook.Rule rule = null;
                     try
                     {
-                        r = rules[i];
-                        if (string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase))
+                        rule = rules[i];
+                        if (string.Equals(rule.Name, name, StringComparison.OrdinalIgnoreCase))
                         {
                             indexToRemove = i;
                             break;
                         }
                     }
                     catch { }
-                    finally { if (r != null) try { Marshal.ReleaseComObject(r); } catch { } }
+                    finally
+                    {
+                        ReleaseComObjectQuietly(rule);
+                    }
                 }
             }
 
@@ -694,18 +451,22 @@ namespace OutlookAddIn
                 string name = req.OriginalRuleName ?? req.RuleName;
                 for (int i = 1; i <= rules.Count; i++)
                 {
-                    Outlook.Rule r = null;
+                    Outlook.Rule rule = null;
                     try
                     {
-                        r = rules[i];
-                        if (string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase))
+                        rule = rules[i];
+                        if (string.Equals(rule.Name, name, StringComparison.OrdinalIgnoreCase))
                         {
-                            target = r;
+                            target = rule;
                             break;
                         }
                     }
                     catch { }
-                    finally { if (r != null && !ReferenceEquals(r, target)) try { Marshal.ReleaseComObject(r); } catch { } }
+                    finally
+                    {
+                        if (rule != null && !ReferenceEquals(rule, target))
+                            ReleaseComObjectQuietly(rule);
+                    }
                 }
             }
 
@@ -716,7 +477,23 @@ namespace OutlookAddIn
             {
                 target.Enabled = req.Enabled;
             }
-            finally { try { Marshal.ReleaseComObject(target); } catch { } }
+            finally
+            {
+                ReleaseComObjectQuietly(target);
+            }
+        }
+
+        private static void ReleaseComObjectQuietly(object obj)
+        {
+            if (obj == null)
+                return;
+
+            try
+            {
+                if (Marshal.IsComObject(obj))
+                    Marshal.ReleaseComObject(obj);
+            }
+            catch { }
         }
     }
 }

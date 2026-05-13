@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using OutlookAddIn.Clients;
+using OutlookAddIn.Infrastructure.Threading;
 using OutlookAddIn.OutlookServices.Categories;
+using OutlookAddIn.OutlookServices.Calendar;
+using OutlookAddIn.OutlookServices.Rules;
 using SmartOffice.Hub.Contracts;
 
 namespace OutlookAddIn.Application
@@ -10,11 +14,20 @@ namespace OutlookAddIn.Application
     {
         private readonly ThisAddIn _addin;
         private readonly OutlookCategoryReader _categoryReader;
+        private readonly OutlookCalendarReader _calendarReader;
+        private readonly OutlookRuleReader _ruleReader;
+        private readonly OutlookRuleCommandHandler _ruleCommandHandler;
 
-        public ThisAddInAutomationAdapter(ThisAddIn addin)
+        public ThisAddInAutomationAdapter(
+            ThisAddIn addin,
+            SignalRClient signalRClient,
+            OutlookThreadInvoker outlookThread)
         {
             _addin = addin ?? throw new ArgumentNullException(nameof(addin));
             _categoryReader = new OutlookCategoryReader(addin.Application);
+            _calendarReader = new OutlookCalendarReader(addin.Application);
+            _ruleReader = new OutlookRuleReader(addin.Application);
+            _ruleCommandHandler = new OutlookRuleCommandHandler(signalRClient, outlookThread, addin.Application);
         }
 
         public bool IsOutlookReady()
@@ -47,12 +60,12 @@ namespace OutlookAddIn.Application
         public ExportedMailAttachmentDto ExportMailAttachment(OutlookCommandExportMailAttachmentRequest request) =>
             _addin.ExportMailAttachment(request);
 
-        public List<OutlookRuleDto> ReadRules() => _addin.ReadRules();
+        public List<OutlookRuleDto> ReadRules() => _ruleReader.ReadRules();
 
         public List<OutlookCategoryDto> ReadCategories() => _categoryReader.ReadCategories();
 
         public List<CalendarEventDto> ReadCalendarEvents(DateTime start, DateTime end) =>
-            _addin.ReadCalendarEvents(start, end);
+            _calendarReader.ReadCalendarEvents(start, end);
 
         public Task HandleFetchFolderRootsAsync(OutlookCommand command) =>
             _addin.HandleFetchFolderRootsAsync(command);
@@ -67,7 +80,7 @@ namespace OutlookAddIn.Application
             _addin.HandleFolderMailsSliceAsync(command);
 
         public Task HandleManageRuleAsync(OutlookCommand command) =>
-            _addin.HandleManageRuleAsync(command);
+            _ruleCommandHandler.HandleManageRuleAsync(command);
 
         public Task HandleUpdateMailPropertiesAsync(OutlookCommand command) =>
             _addin.HandleUpdateMailPropertiesAsync(command);

@@ -1,109 +1,181 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using OutlookAddIn.OutlookServices.Common;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.OutlookServices.Calendar
 {
-    public partial class ThisAddIn
+    internal sealed class OutlookCalendarReader
     {
-        // Read calendar events from default calendar for a date range
+        private readonly Outlook.Application _application;
+
+        public OutlookCalendarReader(Outlook.Application application)
+        {
+            _application = application ?? throw new ArgumentNullException(nameof(application));
+        }
+
         public List<CalendarEventDto> ReadCalendarEvents(DateTime start, DateTime end)
         {
             var events = new List<CalendarEventDto>();
+            Outlook.MAPIFolder folder = null;
+            Outlook.Items items = null;
+            Outlook.Items restricted = null;
+
             try
             {
-                var folder = this.Application.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
-                if (folder == null) return events;
+                folder = _application.Session.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderCalendar);
+                if (folder == null)
+                    return events;
 
-                var items = folder.Items;
+                items = folder.Items;
+                if (items == null)
+                    return events;
+
                 items.IncludeRecurrences = true;
-                // Sort by start
                 try { items.Sort("[Start]", false); } catch { }
 
-                // Outlook DASL filter expects MM/dd/yyyy format in invariant culture
-                var filter = string.Format("[Start] >= '{0}' AND [Start] < '{1}'", start.ToString("MM/dd/yyyy HH:mm"), end.ToString("MM/dd/yyyy HH:mm"));
-                var restricted = items.Restrict(filter);
+                var filter = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "[Start] >= '{0}' AND [Start] < '{1}'",
+                    start.ToString("MM/dd/yyyy HH:mm", CultureInfo.InvariantCulture),
+                    end.ToString("MM/dd/yyyy HH:mm", CultureInfo.InvariantCulture));
+                restricted = items.Restrict(filter);
 
                 foreach (var obj in restricted)
                 {
-                    var appt = obj as Outlook.AppointmentItem;
-                    if (appt == null) { if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { } continue; }
+                    var appointment = obj as Outlook.AppointmentItem;
+                    if (appointment == null)
+                    {
+                        Release(obj);
+                        continue;
+                    }
+
                     try
                     {
-                        // Build structured organizer DTO
-                        OutlookRecipientDto organizerDto = new OutlookRecipientDto
-                        {
-                            RecipientKind = "organizer",
-                            DisplayName = "",
-                            SmtpAddress = "",
-                            RawAddress = "",
-                            AddressType = "",
-                            EntryUserType = "",
-                            IsGroup = false,
-                            IsResolved = false,
-                            Members = new List<OutlookRecipientDto>()
-                        };
-                        try { organizerDto.DisplayName = appt.Organizer ?? ""; } catch { }
-
-                        // Build structured required attendees list
-                        var requiredAttendeeDtos = new List<OutlookRecipientDto>();
-                        Outlook.Recipients apptRecipients = null;
-                        try { apptRecipients = appt.Recipients; } catch { }
-                        if (apptRecipients != null)
-                        {
-                            try
-                            {
-                                for (int i = 1; i <= apptRecipients.Count; i++)
-                                {
-                                    Outlook.Recipient r = null;
-                                    try
-                                    {
-                                        r = apptRecipients[i];
-                                        Outlook.OlMeetingRecipientType rt = Outlook.OlMeetingRecipientType.olRequired;
-                                        try { rt = (Outlook.OlMeetingRecipientType)r.Type; } catch { }
-                                        if (rt == Outlook.OlMeetingRecipientType.olRequired ||
-                                            rt == Outlook.OlMeetingRecipientType.olOptional)
-                                        {
-                                            string kind = rt == Outlook.OlMeetingRecipientType.olRequired ? "required" : "optional";
-                                            requiredAttendeeDtos.Add(BuildRecipientDto(r, kind));
-                                        }
-                                    }
-                                    catch { }
-                                    finally { if (r != null) try { Marshal.ReleaseComObject(r); } catch { } }
-                                }
-                            }
-                            finally { try { Marshal.ReleaseComObject(apptRecipients); } catch { } }
-                        }
-
-                        var dto = new CalendarEventDto
-                        {
-                            Id = appt.EntryID ?? "",
-                            Subject = appt.Subject ?? "",
-                            Start = appt.Start,
-                            End = appt.End,
-                            Location = appt.Location ?? "",
-                            Organizer = organizerDto,
-                            RequiredAttendees = requiredAttendeeDtos,
-                            IsRecurring = appt.IsRecurring,
-                            BusyStatus = appt.BusyStatus.ToString()
-                        };
-                        events.Add(dto);
+                        events.Add(ReadAppointment(appointment));
                     }
                     catch { }
-                    finally { try { Marshal.ReleaseComObject(appt); } catch { } }
+                    finally
+                    {
+                        Release(appointment);
+                    }
                 }
-
-                try { Marshal.ReleaseComObject(restricted); } catch { }
-                try { Marshal.ReleaseComObject(items); } catch { }
-                try { Marshal.ReleaseComObject(folder); } catch { }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("ReadCalendarEvents error: " + ex);
             }
+            finally
+            {
+                Release(restricted);
+                Release(items);
+                Release(folder);
+            }
+
             return events;
+        }
+
+        private static CalendarEventDto ReadAppointment(Outlook.AppointmentItem appointment)
+        {
+            var organizerDto = new OutlookRecipientDto
+            {
+                RecipientKind = "organizer",
+                DisplayName = "",
+                SmtpAddress = "",
+                RawAddress = "",
+                AddressType = "",
+                EntryUserType = "",
+                IsGroup = false,
+                IsResolved = false,
+                Members = new List<OutlookRecipientDto>()
+            };
+            try { organizerDto.DisplayName = appointment.Organizer ?? ""; } catch { }
+
+            return new CalendarEventDto
+            {
+                Id = ReadString(() => appointment.EntryID),
+                Subject = ReadString(() => appointment.Subject),
+                Start = ReadDate(() => appointment.Start),
+                End = ReadDate(() => appointment.End),
+                Location = ReadString(() => appointment.Location),
+                Organizer = organizerDto,
+                RequiredAttendees = ReadAttendees(appointment),
+                IsRecurring = ReadBool(() => appointment.IsRecurring),
+                BusyStatus = ReadString(() => appointment.BusyStatus.ToString())
+            };
+        }
+
+        private static List<OutlookRecipientDto> ReadAttendees(Outlook.AppointmentItem appointment)
+        {
+            var attendees = new List<OutlookRecipientDto>();
+            Outlook.Recipients recipients = null;
+
+            try { recipients = appointment.Recipients; } catch { }
+            if (recipients == null)
+                return attendees;
+
+            try
+            {
+                for (int i = 1; i <= recipients.Count; i++)
+                {
+                    Outlook.Recipient recipient = null;
+                    try
+                    {
+                        recipient = recipients[i];
+                        var recipientType = Outlook.OlMeetingRecipientType.olRequired;
+                        try { recipientType = (Outlook.OlMeetingRecipientType)recipient.Type; } catch { }
+
+                        if (recipientType == Outlook.OlMeetingRecipientType.olRequired ||
+                            recipientType == Outlook.OlMeetingRecipientType.olOptional)
+                        {
+                            var kind = recipientType == Outlook.OlMeetingRecipientType.olRequired ? "required" : "optional";
+                            attendees.Add(OutlookRecipientDtoBuilder.FromRecipient(recipient, kind));
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        Release(recipient);
+                    }
+                }
+            }
+            finally
+            {
+                Release(recipients);
+            }
+
+            return attendees;
+        }
+
+        private static string ReadString(Func<string> read)
+        {
+            try { return read() ?? ""; } catch { return ""; }
+        }
+
+        private static DateTime ReadDate(Func<DateTime> read)
+        {
+            try { return read(); } catch { return DateTime.MinValue; }
+        }
+
+        private static bool ReadBool(Func<bool> read)
+        {
+            try { return read(); } catch { return false; }
+        }
+
+        private static void Release(object obj)
+        {
+            if (obj == null)
+                return;
+
+            try
+            {
+                if (Marshal.IsComObject(obj))
+                    Marshal.ReleaseComObject(obj);
+            }
+            catch { }
         }
     }
 }

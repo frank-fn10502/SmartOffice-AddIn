@@ -54,7 +54,7 @@ namespace OutlookAddIn
                 _commandDispatcher = new OutlookCommandDispatcher(
                     _signalRClient,
                     _outlookThread,
-                    new ThisAddInAutomationAdapter(this));
+                    new ThisAddInAutomationAdapter(this, _signalRClient, _outlookThread));
                 _signalRClient.CommandReceived += _commandDispatcher.OnCommandReceivedAsync;
                 await _signalRClient.StartAsync();
                 _chatPane.SetSignalRClient(_signalRClient);
