@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
@@ -186,7 +186,7 @@ namespace OutlookAddIn
                     return;
                 }
 
-                // Always move ¡X never call MailItem.Delete()
+                // Always move - never call MailItem.Delete()
                 var moved = mail.Move(dest);
                 try { if (moved != null) Marshal.ReleaseComObject(moved); } catch { }
 
@@ -215,7 +215,7 @@ namespace OutlookAddIn
 
         /// <summary>
         /// Resolves a destination folder path to a MAPIFolder.
-        /// If the path matches the Deleted Items folder (by olFolderDeletedItems ¡X locale-independent),
+        /// If the path matches the Deleted Items folder (by olFolderDeletedItems - locale-independent),
         /// that folder is returned directly without relying on a locale-specific folder name string.
         /// </summary>
         private Outlook.MAPIFolder ResolveDestinationFolder(string destinationFolderPath)
@@ -497,7 +497,7 @@ namespace OutlookAddIn
                 }
 
                 // Guard: if mail is already in Deleted Items or a sub-folder of it,
-                // do not move further – ask the user to permanently delete from Outlook.
+                // do not move further - ask the user to permanently delete from Outlook.
                 string _deletedItemsRootPath = "";
                 try { _deletedItemsRootPath = deletedItems.FolderPath ?? ""; } catch { }
                 string _mailCurrentFolderPath = "";
@@ -522,7 +522,7 @@ namespace OutlookAddIn
                     return;
                 }
 
-                // Move to Deleted Items – never Delete()
+                // Move to Deleted Items - never Delete()
                 var moved = mail.Move(deletedItems);
                 try { if (moved != null) Marshal.ReleaseComObject(moved); } catch { }
 
@@ -601,7 +601,7 @@ namespace OutlookAddIn
                             continue;
                         }
 
-                        // Always move – never call Delete()
+                        // Always move - never call Delete()
                         var moved = mail.Move(dest);
                         try { if (moved != null) Marshal.ReleaseComObject(moved); } catch { }
                         successCount++;

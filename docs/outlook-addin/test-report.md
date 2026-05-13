@@ -1,4 +1,4 @@
-# Office 2016 工作機測試回報
+﻿# Office 2016 工作機測試回報
 
 本文件規範工作機實測資料、差異與錯誤要如何回傳。回報目標很單純：讓 AddIn contract、Outlook API mapping、檔案寫入或 DTO 欄位能依據真實 Office 2016 行為修正。
 

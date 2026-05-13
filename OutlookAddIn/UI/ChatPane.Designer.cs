@@ -1,4 +1,4 @@
-namespace OutlookAddIn.UI
+﻿namespace OutlookAddIn.UI
 {
     partial class ChatPane
     {

@@ -1,4 +1,4 @@
-# Office 2016 Add-in 線上文件
+﻿# Office 2016 Add-in 線上文件
 
 本文件只紀錄 Office 2016 AddIn 實作時可查的線上文件入口。SignalR payload 與 DTO 格式請看 `signalr-contract.md`；工作機實測資料、差異與錯誤回報格式請看 `test-report.md`。
 

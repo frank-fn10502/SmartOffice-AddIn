@@ -1,4 +1,4 @@
-# AGENTS.md
+﻿# AGENTS.md
 
 這份文件是 `SmartOffice/` 的 AI coding agent 入口。此專案是 Windows / Outlook / VSTO Add-in solution，和旁邊的 `SmartOffice.Hub/` 共同組成 SmartOffice PoC。
 

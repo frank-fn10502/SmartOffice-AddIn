@@ -1,4 +1,4 @@
-# SmartOffice - POC
+﻿# SmartOffice - POC
 
 ## Architecture
 

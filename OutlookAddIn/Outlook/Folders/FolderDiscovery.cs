@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -35,7 +35,7 @@ namespace OutlookAddIn
         // ????????????????????????????????????????????????????????????????????????????
         // Only probe folder types that are universally supported across Exchange, PST, and IMAP stores.
         // Journal, RssFeeds, SyncIssues, Conflicts, LocalFailures, ServerFailures, Notes are absent on
-        // PST/IMAP stores and throw COMException on every call — excluded to avoid exception noise.
+        // PST/IMAP stores and throw COMException on every call - excluded to avoid exception noise.
         private static readonly Outlook.OlDefaultFolders[] s_knownDefaultFolders = new[]
         {
             Outlook.OlDefaultFolders.olFolderInbox,
@@ -137,10 +137,10 @@ namespace OutlookAddIn
             }
         }
 
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         // fetch_folder_children: list direct children of a specified parent folder.
         // Prefers storeId + parentEntryId; falls back to parentFolderPath.
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         internal async Task HandleFetchFolderChildrenAsync(OutlookCommand cmd)
         {
             var req = cmd.FolderDiscoveryRequest;
@@ -198,9 +198,9 @@ namespace OutlookAddIn
             }
         }
 
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         // Reads all Outlook stores and their root folders only (no recursion).
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         private void ReadStoreRoots(out List<OutlookStoreDto> stores, out List<FolderDto> rootFolders)
         {
             stores = new List<OutlookStoreDto>();
@@ -291,10 +291,10 @@ namespace OutlookAddIn
             }
         }
 
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         // Reads direct children of the parent folder specified in req.
         // Returns the parent itself (with childrenLoaded=true) plus its children.
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         private void ReadFolderChildren(
             OutlookCommandFolderDiscoveryRequest req,
             out List<OutlookStoreDto> stores,
@@ -452,9 +452,9 @@ namespace OutlookAddIn
             }
         }
 
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         // Utility: determine store kind from ExchangeStoreType / file extension.
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         private string DetermineStoreKind(Outlook.Store store, string storeFilePath)
         {
             try
@@ -474,9 +474,9 @@ namespace OutlookAddIn
             return "other";
         }
 
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         // Utility: locate a folder in a specific store by its EntryID.
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         private Outlook.MAPIFolder GetFolderByEntryIdInStore(string storeId, string entryId)
         {
             if (string.IsNullOrEmpty(storeId) || string.IsNullOrEmpty(entryId)) return null;
@@ -539,11 +539,11 @@ namespace OutlookAddIn
             return null;
         }
 
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         // PushFolderSyncAsync: used internally after create/delete/move to push
         // a minimal incremental sync showing updated folder item counts.
         // Only re-pushes directly affected folders (not the whole tree).
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         public async System.Threading.Tasks.Task PushFolderSyncAsync(
             string specificFolderPath = null, string specificFolderPath2 = null)
         {
@@ -627,9 +627,9 @@ namespace OutlookAddIn
             await _signalRClient.CompleteFolderSyncAsync(new FolderSyncCompleteDto { SyncId = syncId });
         }
 
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         // Legacy helper kept for search and mail path navigation.
-        // ¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w¢w
+        // ---------------------------------------------------------------------
         public void ReadFoldersFlat(out List<OutlookStoreDto> stores, out List<FolderDto> folders)
         {
             ReadStoreRoots(out stores, out folders);

@@ -1,4 +1,4 @@
-using SmartOffice.Hub.Contracts;
+ï»¿using SmartOffice.Hub.Contracts;
 using OutlookAddIn.Domain.Folders;
 
 namespace OutlookAddIn.Tests
@@ -6,7 +6,7 @@ namespace OutlookAddIn.Tests
     public class FolderFilterTests
     {
         // ====================================================================
-        // IsSystemFolder ¡X known system folder names
+        // IsSystemFolder - known system folder names
         // ====================================================================
 
         [Theory]
@@ -42,7 +42,7 @@ namespace OutlookAddIn.Tests
         }
 
         // ====================================================================
-        // IsSystemFolder ¡X GUID-like names (Exchange internal folders)
+        // IsSystemFolder - GUID-like names (Exchange internal folders)
         // ====================================================================
 
         [Theory]
@@ -54,7 +54,7 @@ namespace OutlookAddIn.Tests
         }
 
         // ====================================================================
-        // IsSystemFolder ¡X normal user folder names
+        // IsSystemFolder - normal user folder names
         // ====================================================================
 
         [Theory]
@@ -71,7 +71,7 @@ namespace OutlookAddIn.Tests
         [InlineData("Notes")]
         [InlineData("Journal")]
         [InlineData("My Project")]
-        [InlineData("«È¤á¸ê®Æ")]
+        [InlineData("å®¢æˆ¶è³‡æ–™")]
         [InlineData("2024 Reports")]
         public void IsSystemFolder_NormalFolderNames_ReturnsFalse(string name)
         {
@@ -79,7 +79,7 @@ namespace OutlookAddIn.Tests
         }
 
         // ====================================================================
-        // IsSystemFolder ¡X edge cases
+        // IsSystemFolder - edge cases
         // ====================================================================
 
         [Theory]
@@ -113,7 +113,7 @@ namespace OutlookAddIn.Tests
         }
 
         // ====================================================================
-        // BuildTree – realistic Outlook folder structure simulation
+        // BuildTree - realistic Outlook folder structure simulation
         // FolderDto is now a flat list; parent-child is expressed via ParentFolderPath.
         // ====================================================================
 

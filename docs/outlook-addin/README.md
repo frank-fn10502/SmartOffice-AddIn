@@ -1,4 +1,4 @@
-# Outlook AddIn 實作者文件
+﻿# Outlook AddIn 實作者文件
 
 本資料夾是給工作機 Outlook AddIn 實作者看的文件。這裡只描述 AddIn 需要遵守的 Outlook automation 與 SignalR contract；除非直接影響 AddIn 實作，否則不在此解釋外部 client、服務端流程、測試替身或開發機架構。
 

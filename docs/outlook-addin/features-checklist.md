@@ -1,4 +1,4 @@
-# Outlook AddIn 功能實作 Checklist
+﻿# Outlook AddIn 功能實作 Checklist
 
 本文件是工作機 AI 實作 Outlook AddIn 功能的入口。請先用本 checklist 對照缺口；只有需要 payload 細節或 Outlook object model 依據時，再查看後面的參考文件。
 

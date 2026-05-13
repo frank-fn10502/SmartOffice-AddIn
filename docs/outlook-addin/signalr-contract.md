@@ -1,4 +1,4 @@
-# Outlook AddIn SignalR 溝通介面
+﻿# Outlook AddIn SignalR 溝通介面
 
 本文件整理工作機 Outlook AddIn 的正式 SignalR-only contract。AddIn 實作順序與驗收請先看 `features-checklist.md`；本文件只保留 SignalR method、request object、DTO 與 payload 細節。
 
