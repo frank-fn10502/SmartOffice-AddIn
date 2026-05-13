@@ -275,7 +275,7 @@ namespace OutlookAddIn
         // Supports: upsert, delete, set_enabled
         // Only conditions/actions creatable via Outlook Rules object model are applied.
         // ────────────────────────────────────────────────────────────────────────────────
-        private async Task HandleManageRuleAsync(OutlookCommand cmd)
+        internal async Task HandleManageRuleAsync(OutlookCommand cmd)
         {
             var req = cmd.RuleRequest;
             if (req == null || string.IsNullOrEmpty(req.Operation))

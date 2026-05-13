@@ -1,7 +1,7 @@
 ﻿using System;
-using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Office.Tools;
+using OutlookAddIn.Application;
 using OutlookAddIn.Clients;
 using OutlookAddIn.Infrastructure.Threading;
 using OutlookAddIn.Ribbon;
@@ -17,7 +17,7 @@ namespace OutlookAddIn
         private SmartOfficeRibbon _ribbon;
         private SignalRClient _signalRClient;
         private OutlookThreadInvoker _outlookThread;
-        private readonly SemaphoreSlim _commandGate = new SemaphoreSlim(1, 1);
+        private OutlookCommandDispatcher _commandDispatcher;
 
         private void ThisAddIn_Startup(object sender, System.EventArgs e)
         {
@@ -51,7 +51,11 @@ namespace OutlookAddIn
             try
             {
                 _signalRClient = new SignalRClient(HubClient.BaseUrl);
-                _signalRClient.CommandReceived += OnCommandReceivedAsync;
+                _commandDispatcher = new OutlookCommandDispatcher(
+                    _signalRClient,
+                    _outlookThread,
+                    new ThisAddInAutomationAdapter(this));
+                _signalRClient.CommandReceived += _commandDispatcher.OnCommandReceivedAsync;
                 await _signalRClient.StartAsync();
                 _chatPane.SetSignalRClient(_signalRClient);
                 System.Diagnostics.Debug.WriteLine("SmartOffice SignalR connected to /hub/outlook-addin.");

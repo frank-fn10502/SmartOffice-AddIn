@@ -1,13 +1,34 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
+using OutlookAddIn.Clients;
+using OutlookAddIn.Infrastructure.Diagnostics;
+using OutlookAddIn.Infrastructure.Threading;
 using SmartOffice.Hub.Contracts;
 
-namespace OutlookAddIn
+namespace OutlookAddIn.Application
 {
-    public partial class ThisAddIn
+    internal sealed class OutlookCommandDispatcher
     {
-        private async Task OnCommandReceivedAsync(OutlookCommand cmd)
+        private const int FetchMailsMaxCount = 100;
+
+        private readonly SignalRClient _signalRClient;
+        private readonly OutlookThreadInvoker _outlookThread;
+        private readonly IOutlookCommandAutomation _automation;
+        private readonly SemaphoreSlim _commandGate = new SemaphoreSlim(1, 1);
+
+        public OutlookCommandDispatcher(
+            SignalRClient signalRClient,
+            OutlookThreadInvoker outlookThread,
+            IOutlookCommandAutomation automation)
+        {
+            _signalRClient = signalRClient ?? throw new ArgumentNullException(nameof(signalRClient));
+            _outlookThread = outlookThread ?? throw new ArgumentNullException(nameof(outlookThread));
+            _automation = automation ?? throw new ArgumentNullException(nameof(automation));
+        }
+
+        public async Task OnCommandReceivedAsync(OutlookCommand cmd)
         {
             if (!_commandGate.Wait(0))
             {
@@ -33,7 +54,7 @@ namespace OutlookAddIn
                     await _signalRClient.ReportCommandResultAsync(
                         cmd.Id,
                         false,
-                        "Error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex)).ConfigureAwait(false);
+                        "Error: " + SensitiveLogSanitizer.Sanitize(ex)).ConfigureAwait(false);
                 }
                 catch { }
             }
@@ -53,19 +74,19 @@ namespace OutlookAddIn
                     await HandlePingAsync(cmd).ConfigureAwait(false);
                     break;
                 case "fetch_folder_roots":
-                    await HandleFetchFolderRootsAsync(cmd).ConfigureAwait(false);
+                    await _automation.HandleFetchFolderRootsAsync(cmd).ConfigureAwait(false);
                     break;
                 case "fetch_folder_children":
-                    await HandleFetchFolderChildrenAsync(cmd).ConfigureAwait(false);
+                    await _automation.HandleFetchFolderChildrenAsync(cmd).ConfigureAwait(false);
                     break;
                 case "fetch_mails":
                     await HandleFetchMailsAsync(cmd).ConfigureAwait(false);
                     break;
                 case "fetch_mail_search_slice":
-                    await HandleMailSearchSliceAsync(cmd).ConfigureAwait(false);
+                    await _automation.HandleMailSearchSliceAsync(cmd).ConfigureAwait(false);
                     break;
                 case "fetch_folder_mails_slice":
-                    await HandleFolderMailsSliceAsync(cmd).ConfigureAwait(false);
+                    await _automation.HandleFolderMailsSliceAsync(cmd).ConfigureAwait(false);
                     break;
                 case "fetch_mail_body":
                     await HandleFetchMailBodyAsync(cmd).ConfigureAwait(false);
@@ -83,7 +104,7 @@ namespace OutlookAddIn
                     await HandleFetchRulesAsync(cmd).ConfigureAwait(false);
                     break;
                 case "manage_rule":
-                    await HandleManageRuleAsync(cmd).ConfigureAwait(false);
+                    await _automation.HandleManageRuleAsync(cmd).ConfigureAwait(false);
                     break;
                 case "fetch_categories":
                     await HandleFetchCategoriesAsync(cmd).ConfigureAwait(false);
@@ -92,25 +113,25 @@ namespace OutlookAddIn
                     await HandleFetchCalendarAsync(cmd).ConfigureAwait(false);
                     break;
                 case "update_mail_properties":
-                    await _outlookThread.InvokeLegacyAsyncCommand(() => HandleUpdateMailPropertiesAsync(cmd)).ConfigureAwait(false);
+                    await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleUpdateMailPropertiesAsync(cmd)).ConfigureAwait(false);
                     break;
                 case "move_mail":
-                    await _outlookThread.InvokeLegacyAsyncCommand(() => HandleMoveMailAsync(cmd)).ConfigureAwait(false);
+                    await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleMoveMailAsync(cmd)).ConfigureAwait(false);
                     break;
                 case "move_mails":
-                    await _outlookThread.InvokeLegacyAsyncCommand(() => HandleMoveMailsAsync(cmd)).ConfigureAwait(false);
+                    await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleMoveMailsAsync(cmd)).ConfigureAwait(false);
                     break;
                 case "delete_mail":
-                    await _outlookThread.InvokeLegacyAsyncCommand(() => HandleDeleteMailAsync(cmd)).ConfigureAwait(false);
+                    await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleDeleteMailAsync(cmd)).ConfigureAwait(false);
                     break;
                 case "create_folder":
-                    await _outlookThread.InvokeLegacyAsyncCommand(() => HandleCreateFolderAsync(cmd)).ConfigureAwait(false);
+                    await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleCreateFolderAsync(cmd)).ConfigureAwait(false);
                     break;
                 case "delete_folder":
-                    await _outlookThread.InvokeLegacyAsyncCommand(() => HandleDeleteFolderAsync(cmd)).ConfigureAwait(false);
+                    await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleDeleteFolderAsync(cmd)).ConfigureAwait(false);
                     break;
                 case "upsert_category":
-                    await _outlookThread.InvokeLegacyAsyncCommand(() => HandleUpsertCategoryAsync(cmd)).ConfigureAwait(false);
+                    await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleUpsertCategoryAsync(cmd)).ConfigureAwait(false);
                     break;
                 default:
                     await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "Unknown command type: " + cmd.Type).ConfigureAwait(false);
@@ -120,15 +141,7 @@ namespace OutlookAddIn
 
         private async Task HandlePingAsync(OutlookCommand cmd)
         {
-            bool outlookReady = await _outlookThread.InvokeAsync(() =>
-            {
-                try
-                {
-                    var ns = Application.Session;
-                    return ns != null && ns.Stores != null;
-                }
-                catch { return false; }
-            }).ConfigureAwait(false);
+            bool outlookReady = await _outlookThread.InvokeAsync(() => _automation.IsOutlookReady()).ConfigureAwait(false);
 
             await _signalRClient.ReportCommandResultAsync(cmd.Id, outlookReady, outlookReady ? "pong" : "Outlook session not ready").ConfigureAwait(false);
         }
@@ -152,7 +165,7 @@ namespace OutlookAddIn
                 List<MailItemDto> mails = await _outlookThread.InvokeAsync(() =>
                 {
                     List<MailItemDto> readMails;
-                    if (!TryReadMailsFast(mailReq, out readMails, out readError))
+                    if (!_automation.TryReadMailsFast(mailReq, out readMails, out readError))
                         return null;
                     return readMails;
                 }).ConfigureAwait(false);
@@ -168,7 +181,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mails error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex)).ConfigureAwait(false);
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mails error: " + SensitiveLogSanitizer.Sanitize(ex)).ConfigureAwait(false);
             }
         }
 
@@ -181,7 +194,7 @@ namespace OutlookAddIn
                 return;
             }
 
-            MailBodyDto dto = await _outlookThread.InvokeAsync(() => ReadMailBody(req.MailId, req.FolderPath)).ConfigureAwait(false);
+            MailBodyDto dto = await _outlookThread.InvokeAsync(() => _automation.ReadMailBody(req.MailId, req.FolderPath)).ConfigureAwait(false);
             if (dto == null)
             {
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mail_body failed: mail not found").ConfigureAwait(false);
@@ -201,7 +214,7 @@ namespace OutlookAddIn
                 return;
             }
 
-            MailAttachmentsDto dto = await _outlookThread.InvokeAsync(() => ReadMailAttachments(req.MailId, req.FolderPath)).ConfigureAwait(false);
+            MailAttachmentsDto dto = await _outlookThread.InvokeAsync(() => _automation.ReadMailAttachments(req.MailId, req.FolderPath)).ConfigureAwait(false);
             if (dto == null)
             {
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mail_attachments failed: mail not found").ConfigureAwait(false);
@@ -222,7 +235,7 @@ namespace OutlookAddIn
             }
 
             MailConversationDto dto = await _outlookThread.InvokeAsync(() =>
-                ReadMailConversation(req.MailId, req.FolderPath, req.MaxCount, req.IncludeBody)).ConfigureAwait(false);
+                _automation.ReadMailConversation(req.MailId, req.FolderPath, req.MaxCount, req.IncludeBody)).ConfigureAwait(false);
             if (dto == null)
             {
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "fetch_mail_conversation failed: mail not found or conversation unavailable").ConfigureAwait(false);
@@ -242,7 +255,7 @@ namespace OutlookAddIn
                 return;
             }
 
-            ExportedMailAttachmentDto dto = await _outlookThread.InvokeAsync(() => ExportMailAttachment(req)).ConfigureAwait(false);
+            ExportedMailAttachmentDto dto = await _outlookThread.InvokeAsync(() => _automation.ExportMailAttachment(req)).ConfigureAwait(false);
             if (dto == null)
             {
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "export_mail_attachment failed: attachment not found or export error").ConfigureAwait(false);
@@ -256,7 +269,7 @@ namespace OutlookAddIn
         private async Task HandleFetchRulesAsync(OutlookCommand cmd)
         {
             await _signalRClient.ReportLogAsync("info", "fetch_rules: starting").ConfigureAwait(false);
-            List<OutlookRuleDto> rules = await _outlookThread.InvokeAsync(() => ReadRules()).ConfigureAwait(false);
+            List<OutlookRuleDto> rules = await _outlookThread.InvokeAsync(() => _automation.ReadRules()).ConfigureAwait(false);
             await _signalRClient.PushRulesAsync(rules ?? new List<OutlookRuleDto>()).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_rules completed. Items: " + (rules?.Count ?? 0)).ConfigureAwait(false);
         }
@@ -264,7 +277,7 @@ namespace OutlookAddIn
         private async Task HandleFetchCategoriesAsync(OutlookCommand cmd)
         {
             await _signalRClient.ReportLogAsync("info", "fetch_categories: starting").ConfigureAwait(false);
-            List<OutlookCategoryDto> categories = await _outlookThread.InvokeAsync(() => ReadCategories()).ConfigureAwait(false);
+            List<OutlookCategoryDto> categories = await _outlookThread.InvokeAsync(() => _automation.ReadCategories()).ConfigureAwait(false);
             await _signalRClient.PushCategoriesAsync(categories ?? new List<OutlookCategoryDto>()).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_categories completed. Items: " + (categories?.Count ?? 0)).ConfigureAwait(false);
         }
@@ -291,7 +304,7 @@ namespace OutlookAddIn
             }
 
             await _signalRClient.ReportLogAsync("info", $"fetch_calendar: {calStart:yyyy-MM-dd} to {calEnd:yyyy-MM-dd}").ConfigureAwait(false);
-            List<CalendarEventDto> events = await _outlookThread.InvokeAsync(() => ReadCalendarEvents(calStart, calEnd)).ConfigureAwait(false);
+            List<CalendarEventDto> events = await _outlookThread.InvokeAsync(() => _automation.ReadCalendarEvents(calStart, calEnd)).ConfigureAwait(false);
             await _signalRClient.PushCalendarAsync(events ?? new List<CalendarEventDto>()).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_calendar completed. Items: " + (events?.Count ?? 0)).ConfigureAwait(false);
         }

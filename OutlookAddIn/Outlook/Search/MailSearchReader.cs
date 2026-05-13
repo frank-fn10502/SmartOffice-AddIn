@@ -18,7 +18,7 @@ namespace OutlookAddIn
         /// Hub is responsible for cross-folder scheduling; AddIn must not scan globally.
         /// Body is never included (metadata-only per contract).
         /// </summary>
-        private async Task HandleMailSearchSliceAsync(OutlookCommand cmd)
+        internal async Task HandleMailSearchSliceAsync(OutlookCommand cmd)
         {
             var req = cmd.MailSearchSliceRequest;
             if (req == null

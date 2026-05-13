@@ -14,7 +14,7 @@ namespace OutlookAddIn
         // Directly enumerates a single Outlook folder using Items / Items.Restrict.
         // MUST NOT call Application.AdvancedSearch or any Outlook content search.
         // ────────────────────────────────────────────────────────────────────────────────
-        private async Task HandleFolderMailsSliceAsync(OutlookCommand cmd)
+        internal async Task HandleFolderMailsSliceAsync(OutlookCommand cmd)
         {
             var req = cmd.FolderMailsSliceRequest;
 

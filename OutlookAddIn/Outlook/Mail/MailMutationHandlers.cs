@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using OutlookAddIn.Outlook.Categories;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -10,7 +11,7 @@ namespace OutlookAddIn
 {
     public partial class ThisAddIn
     {
-        private async Task HandleUpdateMailPropertiesAsync(OutlookCommand cmd)
+        internal async Task HandleUpdateMailPropertiesAsync(OutlookCommand cmd)
         {
             var req = cmd.MailPropertiesRequest;
             if (req == null || string.IsNullOrEmpty(req.MailId))
@@ -142,7 +143,7 @@ namespace OutlookAddIn
                 // Re-push categories if new ones were added
                 if (categoriesChanged)
                 {
-                    var cats = ReadCategories();
+                    var cats = new OutlookCategoryReader(Application).ReadCategories();
                     await _signalRClient.PushCategoriesAsync(cats);
                 }
             }
@@ -156,7 +157,7 @@ namespace OutlookAddIn
             }
         }
 
-        private async Task HandleMoveMailAsync(OutlookCommand cmd)
+        internal async Task HandleMoveMailAsync(OutlookCommand cmd)
         {
             var req = cmd.MoveMailRequest;
             if (req == null || string.IsNullOrEmpty(req.MailId) || string.IsNullOrEmpty(req.DestinationFolderPath))
@@ -231,7 +232,7 @@ namespace OutlookAddIn
             // Fallback: walk the store tree by path
             return GetFolderByPath(destinationFolderPath);
         }
-        private async Task HandleCreateFolderAsync(OutlookCommand cmd)
+        internal async Task HandleCreateFolderAsync(OutlookCommand cmd)
         {
             var req = cmd.CreateFolderRequest;
             if (req == null || string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ParentFolderPath))
@@ -275,7 +276,7 @@ namespace OutlookAddIn
             }
         }
 
-        private async Task HandleDeleteFolderAsync(OutlookCommand cmd)
+        internal async Task HandleDeleteFolderAsync(OutlookCommand cmd)
         {
             var req = cmd.DeleteFolderRequest;
             if (req == null || string.IsNullOrWhiteSpace(req.FolderPath))
@@ -363,7 +364,7 @@ namespace OutlookAddIn
             }
         }
 
-        private async Task HandleUpsertCategoryAsync(OutlookCommand cmd)
+        internal async Task HandleUpsertCategoryAsync(OutlookCommand cmd)
         {
             var req = cmd.CategoryRequest;
             if (req == null || string.IsNullOrWhiteSpace(req.Name))
@@ -424,7 +425,7 @@ namespace OutlookAddIn
                 try { Marshal.ReleaseComObject(masterCategories); } catch { }
 
                 // After upsert, push full category list
-                var categories = ReadCategories();
+                var categories = new OutlookCategoryReader(Application).ReadCategories();
                 await _signalRClient.PushCategoriesAsync(categories);
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "upsert_category completed.");
             }
@@ -452,7 +453,7 @@ namespace OutlookAddIn
         /// Moves a single mail to the Deleted Items folder (locale-independent).
         /// MailItem.Delete() must never be called.
         /// </summary>
-        private async Task HandleDeleteMailAsync(OutlookCommand cmd)
+        internal async Task HandleDeleteMailAsync(OutlookCommand cmd)
         {
             var req = cmd.DeleteMailRequest;
             if (req == null || string.IsNullOrEmpty(req.MailId))
@@ -556,7 +557,7 @@ namespace OutlookAddIn
         /// Hub dispatches at most 500 mailIds per call; callers must batch larger sets.
         /// MailItem.Delete() must never be called.
         /// </summary>
-        private async Task HandleMoveMailsAsync(OutlookCommand cmd)
+        internal async Task HandleMoveMailsAsync(OutlookCommand cmd)
         {
             var req = cmd.MoveMailsRequest;
             if (req == null || req.MailIds == null || req.MailIds.Count == 0 ||
