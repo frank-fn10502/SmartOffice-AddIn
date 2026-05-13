@@ -168,22 +168,16 @@ namespace OutlookAddIn
 
                 foreach (var obj in filtered)
                 {
-                    var mail = obj as Outlook.MailItem;
                     MailItemDto dto = null;
-                    if (mail == null)
-                    {
-                        if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { }
-                        continue;
-                    }
                     try
                     {
-                        if (!MatchesItemsFilter(mail, req, searchSubject, searchSender))
+                        if (!MatchesItemsFilter(obj, req, searchSubject, searchSender))
                             continue;
 
-                        dto = ReadMailListMetadataDto(mail, currentFolderPath);
+                        dto = ReadMailListMetadataDto(obj, currentFolderPath);
                     }
                     catch { }
-                    finally { try { Marshal.ReleaseComObject(mail); } catch { } }
+                    finally { if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { } }
 
                     if (dto == null)
                         continue;
@@ -319,21 +313,15 @@ namespace OutlookAddIn
 
                 foreach (var obj in filtered)
                 {
-                    var mail = obj as Outlook.MailItem;
-                    if (mail == null)
-                    {
-                        if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { }
-                        continue;
-                    }
                     try
                     {
-                        if (!MatchesItemsFilter(mail, req, searchSubject, searchSender))
+                        if (!MatchesItemsFilter(obj, req, searchSubject, searchSender))
                             continue;
-                        var dto = ReadMailListMetadataDto(mail, currentFolderPath);
+                        var dto = ReadMailListMetadataDto(obj, currentFolderPath);
                         if (dto != null) results.Add(dto);
                     }
                     catch { }
-                    finally { try { Marshal.ReleaseComObject(mail); } catch { } }
+                    finally { if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { } }
                 }
             }
             finally
@@ -361,24 +349,49 @@ namespace OutlookAddIn
         }
 
         private static bool MatchesItemsFilter(
-            Outlook.MailItem mail,
+            object item,
             OutlookCommandMailSearchSliceRequest req,
             bool searchSubject,
             bool searchSender)
         {
+            var mail = item as Outlook.MailItem;
+            var meeting = item as Outlook.MeetingItem;
+            if (mail == null && meeting == null) return false;
+
             // keyword filter
             if (!string.IsNullOrEmpty(req.Keyword))
             {
                 bool keywordHit = false;
                 if (searchSubject)
                 {
-                    string subj = ""; try { subj = mail.Subject ?? ""; } catch { }
+                    string subj = "";
+                    try
+                    {
+                        subj = mail != null
+                            ? mail.Subject ?? ""
+                            : meeting.Subject ?? "";
+                    }
+                    catch { }
                     if (subj.IndexOf(req.Keyword, StringComparison.OrdinalIgnoreCase) >= 0) keywordHit = true;
                 }
                 if (!keywordHit && searchSender)
                 {
-                    string sName = ""; try { sName = mail.SenderName ?? ""; } catch { }
-                    string sAddr = ""; try { sAddr = mail.SenderEmailAddress ?? ""; } catch { }
+                    string sName = "";
+                    string sAddr = "";
+                    try
+                    {
+                        sName = mail != null
+                            ? mail.SenderName ?? ""
+                            : meeting.SenderName ?? "";
+                    }
+                    catch { }
+                    try
+                    {
+                        sAddr = mail != null
+                            ? mail.SenderEmailAddress ?? ""
+                            : meeting.SenderEmailAddress ?? "";
+                    }
+                    catch { }
                     if (sName.IndexOf(req.Keyword, StringComparison.OrdinalIgnoreCase) >= 0 ||
                         sAddr.IndexOf(req.Keyword, StringComparison.OrdinalIgnoreCase) >= 0) keywordHit = true;
                 }
@@ -388,7 +401,14 @@ namespace OutlookAddIn
             // category filter
             if (req.CategoryNames != null && req.CategoryNames.Count > 0)
             {
-                string cats = ""; try { cats = mail.Categories ?? ""; } catch { }
+                string cats = "";
+                try
+                {
+                    cats = mail != null
+                        ? mail.Categories ?? ""
+                        : meeting.Categories ?? "";
+                }
+                catch { }
                 bool catHit = false;
                 foreach (var cat in req.CategoryNames)
                 {
@@ -404,7 +424,7 @@ namespace OutlookAddIn
                 Outlook.Attachments atts = null;
                 try
                 {
-                    atts = mail.Attachments;
+                    atts = mail != null ? mail.Attachments : meeting.Attachments;
                     if (atts != null) attCount = atts.Count;
                 }
                 catch { }
@@ -417,6 +437,8 @@ namespace OutlookAddIn
             // flag state filter
             if (!string.IsNullOrEmpty(req.FlagState) && req.FlagState != "any")
             {
+                if (meeting != null) return false;
+
                 Outlook.OlFlagStatus fs = Outlook.OlFlagStatus.olNoFlag;
                 try { fs = mail.FlagStatus; } catch { }
                 if (req.FlagState == "flagged" && fs != Outlook.OlFlagStatus.olFlagMarked) return false;
@@ -427,7 +449,7 @@ namespace OutlookAddIn
             if (!string.IsNullOrEmpty(req.ReadState) && req.ReadState != "any")
             {
                 bool unread = true;
-                try { unread = mail.UnRead; } catch { }
+                try { unread = mail != null ? mail.UnRead : meeting.UnRead; } catch { }
                 if (req.ReadState == "unread" && !unread) return false;
                 if (req.ReadState == "read" && unread) return false;
             }
@@ -481,16 +503,15 @@ namespace OutlookAddIn
                         int count = resultSet?.Count ?? 0;
                         for (int i = 1; i <= count; i++)
                         {
-                            Outlook.MailItem mail = null;
+                            object item = null;
                             try
                             {
-                                mail = resultSet[i] as Outlook.MailItem;
-                                if (mail == null) continue;
-                                var dto = ReadMailListMetadataDto(mail, folder.FolderPath);
+                                item = resultSet[i];
+                                var dto = ReadMailListMetadataDto(item, folder.FolderPath);
                                 if (dto != null) results.Add(dto);
                             }
                             catch { }
-                            finally { if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { } }
+                            finally { if (item != null) try { Marshal.ReleaseComObject(item); } catch { } }
                         }
                         if (resultSet != null) try { Marshal.ReleaseComObject(resultSet); } catch { }
                     }

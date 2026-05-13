@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using OutlookAddIn.OutlookServices.Common;
 using SmartOffice.Hub.Contracts;
@@ -96,6 +97,21 @@ namespace OutlookAddIn
             if (string.IsNullOrEmpty(dto.SmtpAddress)) dto.SmtpAddress = "";
             if (string.IsNullOrEmpty(dto.AddressType)) dto.AddressType = "";
             if (string.IsNullOrEmpty(dto.EntryUserType)) dto.EntryUserType = "";
+            return dto;
+        }
+
+        private static OutlookRecipientDto BuildSenderDto(Outlook.MeetingItem meeting)
+        {
+            var dto = new OutlookRecipientDto
+            {
+                RecipientKind = "sender",
+                Members = new List<OutlookRecipientDto>()
+            };
+            try { dto.DisplayName = meeting.SenderName ?? ""; } catch { dto.DisplayName = ""; }
+            try { dto.RawAddress = meeting.SenderEmailAddress ?? ""; } catch { dto.RawAddress = ""; }
+            dto.SmtpAddress = dto.RawAddress ?? "";
+            dto.AddressType = "";
+            dto.EntryUserType = "";
             return dto;
         }
 
@@ -197,6 +213,9 @@ namespace OutlookAddIn
                 string conversationIndex = "";
                 try { conversationIndex = mail.ConversationIndex ?? ""; } catch { }
 
+                string messageClass = "";
+                try { messageClass = mail.MessageClass ?? ""; } catch { }
+
                 bool isRead = false;
                 try { isRead = !mail.UnRead; } catch { }
 
@@ -289,6 +308,7 @@ namespace OutlookAddIn
                     Body = body,
                     BodyHtml = bodyHtml,
                     FolderPath = folderPath,
+                    MessageClass = messageClass,
                     ConversationId = conversationId,
                     ConversationTopic = conversationTopic,
                     ConversationIndex = conversationIndex,
@@ -302,6 +322,130 @@ namespace OutlookAddIn
                     TaskStartDate = OutlookDateFilter.ToTransportUtc(taskStartDate),
                     TaskDueDate = OutlookDateFilter.ToTransportUtc(taskDueDate),
                     TaskCompletedDate = OutlookDateFilter.ToTransportUtc(taskCompletedDate),
+                    Importance = importance,
+                    Sensitivity = sensitivity
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public MailItemDto ReadSingleMailDto(Outlook.MeetingItem meeting, string folderPath, bool includeBody = false)
+        {
+            if (meeting == null) return null;
+            try
+            {
+                string entryId = "";
+                try { entryId = meeting.EntryID ?? ""; } catch { }
+
+                string subject = "";
+                try { subject = meeting.Subject ?? ""; } catch { }
+
+                DateTime receivedTime = DateTime.MinValue;
+                try { receivedTime = meeting.ReceivedTime; } catch { }
+
+                string body = "";
+                string bodyHtml = "";
+                if (includeBody)
+                {
+                    try { body = meeting.Body ?? ""; } catch { }
+                    bodyHtml = TryReadComStringProperty(meeting, "HTMLBody");
+                }
+
+                string categories = "";
+                try { categories = meeting.Categories ?? ""; } catch { }
+
+                string conversationId = "";
+                try { conversationId = meeting.ConversationID ?? ""; } catch { }
+                string conversationTopic = "";
+                try { conversationTopic = meeting.ConversationTopic ?? ""; } catch { }
+                string conversationIndex = "";
+                try { conversationIndex = meeting.ConversationIndex ?? ""; } catch { }
+
+                string messageClass = "";
+                try { messageClass = meeting.MessageClass ?? ""; } catch { }
+
+                bool isRead = false;
+                try { isRead = !meeting.UnRead; } catch { }
+
+                string importance = "normal";
+                try
+                {
+                    var imp = meeting.Importance;
+                    if (imp == Outlook.OlImportance.olImportanceLow) importance = "low";
+                    else if (imp == Outlook.OlImportance.olImportanceHigh) importance = "high";
+                }
+                catch { }
+
+                string sensitivity = "normal";
+                try
+                {
+                    var s = meeting.Sensitivity;
+                    if (s == Outlook.OlSensitivity.olPersonal) sensitivity = "personal";
+                    else if (s == Outlook.OlSensitivity.olPrivate) sensitivity = "private";
+                    else if (s == Outlook.OlSensitivity.olConfidential) sensitivity = "confidential";
+                }
+                catch { }
+
+                if (string.IsNullOrEmpty(folderPath))
+                    folderPath = GetOutlookItemFolderPath(meeting);
+
+                int attachmentCount = 0;
+                string attachmentNames = "";
+                Outlook.Attachments atts = null;
+                try
+                {
+                    atts = meeting.Attachments;
+                    if (atts != null)
+                    {
+                        attachmentCount = atts.Count;
+                        var names = new List<string>();
+                        for (int i = 1; i <= atts.Count; i++)
+                        {
+                            Outlook.Attachment a = null;
+                            try
+                            {
+                                a = atts[i];
+                                string fn = "";
+                                try { fn = a.FileName ?? ""; } catch { }
+                                if (!string.IsNullOrEmpty(fn)) names.Add(fn);
+                            }
+                            catch { }
+                            finally { if (a != null) try { Marshal.ReleaseComObject(a); } catch { } }
+                        }
+                        attachmentNames = string.Join(", ", names);
+                    }
+                }
+                finally { if (atts != null) try { Marshal.ReleaseComObject(atts); } catch { } }
+
+                return new MailItemDto
+                {
+                    Id = entryId,
+                    Subject = subject,
+                    Sender = BuildSenderDto(meeting),
+                    ToRecipients = new List<OutlookRecipientDto>(),
+                    CcRecipients = new List<OutlookRecipientDto>(),
+                    BccRecipients = new List<OutlookRecipientDto>(),
+                    ReceivedTime = OutlookDateFilter.ToTransportUtc(receivedTime == DateTime.MinValue ? DateTime.Now : receivedTime),
+                    Body = body,
+                    BodyHtml = bodyHtml,
+                    FolderPath = folderPath,
+                    MessageClass = messageClass,
+                    ConversationId = conversationId,
+                    ConversationTopic = conversationTopic,
+                    ConversationIndex = conversationIndex,
+                    Categories = categories,
+                    IsRead = isRead,
+                    IsMarkedAsTask = false,
+                    AttachmentCount = attachmentCount,
+                    AttachmentNames = attachmentNames,
+                    FlagRequest = "",
+                    FlagInterval = "none",
+                    TaskStartDate = null,
+                    TaskDueDate = null,
+                    TaskCompletedDate = null,
                     Importance = importance,
                     Sensitivity = sensitivity
                 };
@@ -351,6 +495,9 @@ namespace OutlookAddIn
                 try { conversationTopic = mail.ConversationTopic ?? ""; } catch { }
                 string conversationIndex = "";
                 try { conversationIndex = mail.ConversationIndex ?? ""; } catch { }
+
+                string messageClass = "";
+                try { messageClass = mail.MessageClass ?? ""; } catch { }
 
                 bool isRead = false;
                 try { isRead = !mail.UnRead; } catch { }
@@ -432,6 +579,7 @@ namespace OutlookAddIn
                     Body = "",
                     BodyHtml = "",
                     FolderPath = folderPath,
+                    MessageClass = messageClass,
                     ConversationId = conversationId,
                     ConversationTopic = conversationTopic,
                     ConversationIndex = conversationIndex,
@@ -453,6 +601,115 @@ namespace OutlookAddIn
             {
                 return null;
             }
+        }
+
+        private MailItemDto ReadMailListMetadataDto(Outlook.MeetingItem meeting, string folderPath)
+        {
+            if (meeting == null) return null;
+            try
+            {
+                string entryId = "";
+                try { entryId = meeting.EntryID ?? ""; } catch { }
+
+                string subject = "";
+                try { subject = meeting.Subject ?? ""; } catch { }
+
+                DateTime receivedTime = DateTime.MinValue;
+                try { receivedTime = meeting.ReceivedTime; } catch { }
+
+                string categories = "";
+                try { categories = meeting.Categories ?? ""; } catch { }
+
+                string conversationId = "";
+                try { conversationId = meeting.ConversationID ?? ""; } catch { }
+                string conversationTopic = "";
+                try { conversationTopic = meeting.ConversationTopic ?? ""; } catch { }
+                string conversationIndex = "";
+                try { conversationIndex = meeting.ConversationIndex ?? ""; } catch { }
+
+                string messageClass = "";
+                try { messageClass = meeting.MessageClass ?? ""; } catch { }
+
+                bool isRead = false;
+                try { isRead = !meeting.UnRead; } catch { }
+
+                string importance = "normal";
+                try
+                {
+                    var imp = meeting.Importance;
+                    if (imp == Outlook.OlImportance.olImportanceLow) importance = "low";
+                    else if (imp == Outlook.OlImportance.olImportanceHigh) importance = "high";
+                }
+                catch { }
+
+                string sensitivity = "normal";
+                try
+                {
+                    var s = meeting.Sensitivity;
+                    if (s == Outlook.OlSensitivity.olPersonal) sensitivity = "personal";
+                    else if (s == Outlook.OlSensitivity.olPrivate) sensitivity = "private";
+                    else if (s == Outlook.OlSensitivity.olConfidential) sensitivity = "confidential";
+                }
+                catch { }
+
+                if (string.IsNullOrEmpty(folderPath))
+                    folderPath = GetOutlookItemFolderPath(meeting);
+
+                int attachmentCount = 0;
+                Outlook.Attachments atts = null;
+                try
+                {
+                    atts = meeting.Attachments;
+                    if (atts != null) attachmentCount = atts.Count;
+                }
+                catch { }
+                finally { if (atts != null) try { Marshal.ReleaseComObject(atts); } catch { } }
+
+                return new MailItemDto
+                {
+                    Id = entryId,
+                    Subject = subject,
+                    Sender = BuildSenderDto(meeting),
+                    ToRecipients = new List<OutlookRecipientDto>(),
+                    CcRecipients = new List<OutlookRecipientDto>(),
+                    BccRecipients = new List<OutlookRecipientDto>(),
+                    ReceivedTime = OutlookDateFilter.ToTransportUtc(receivedTime == DateTime.MinValue ? DateTime.Now : receivedTime),
+                    Body = "",
+                    BodyHtml = "",
+                    FolderPath = folderPath,
+                    MessageClass = messageClass,
+                    ConversationId = conversationId,
+                    ConversationTopic = conversationTopic,
+                    ConversationIndex = conversationIndex,
+                    Categories = categories,
+                    IsRead = isRead,
+                    IsMarkedAsTask = false,
+                    AttachmentCount = attachmentCount,
+                    AttachmentNames = "",
+                    FlagRequest = "",
+                    FlagInterval = "none",
+                    TaskStartDate = null,
+                    TaskDueDate = null,
+                    TaskCompletedDate = null,
+                    Importance = importance,
+                    Sensitivity = sensitivity
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private MailItemDto ReadMailListMetadataDto(object item, string folderPath)
+        {
+            var mail = item as Outlook.MailItem;
+            if (mail != null) return ReadMailListMetadataDto(mail, folderPath);
+
+            var meeting = item as Outlook.MeetingItem;
+            if (meeting != null) return ReadMailListMetadataDto(meeting, folderPath);
+
+            return null;
         }
 
         /// <summary>
@@ -610,6 +867,7 @@ namespace OutlookAddIn
                 table = folder.GetTable(filterExpr ?? "", Outlook.OlTableContents.olUserItems);
                 TryResetTableColumns(table,
                     "EntryID",
+                    "MessageClass",
                     "Subject",
                     "SenderName",
                     "SenderEmailAddress",
@@ -712,6 +970,7 @@ namespace OutlookAddIn
                 Body = "",
                 BodyHtml = "",
                 FolderPath = folderPath,
+                MessageClass = TableString(row, "MessageClass"),
                 ConversationId = TableString(row, "ConversationID"),
                 ConversationTopic = TableString(row, "ConversationTopic"),
                 ConversationIndex = TableString(row, "ConversationIndex"),
@@ -832,22 +1091,38 @@ namespace OutlookAddIn
         /// </summary>
         public MailBodyDto ReadMailBody(string mailId, string folderPath)
         {
-            Outlook.MailItem mail = null;
+            object item = null;
             try
             {
-                mail = FindMailByEntryId(mailId);
-                if (mail == null) return null;
+                item = FindOutlookItemByEntryId(mailId);
+                if (item == null) return null;
 
-                string body = ""; try { body = mail.Body ?? ""; } catch { }
-                string bodyHtml = ""; try { bodyHtml = mail.HTMLBody ?? ""; } catch { }
+                string body = "";
+                string bodyHtml = "";
+                var mail = item as Outlook.MailItem;
+                var meeting = item as Outlook.MeetingItem;
+                if (mail != null)
+                {
+                    try { body = mail.Body ?? ""; } catch { }
+                    try { bodyHtml = mail.HTMLBody ?? ""; } catch { }
+                }
+                else if (meeting != null)
+                {
+                    try { body = meeting.Body ?? ""; } catch { }
+                    bodyHtml = TryReadComStringProperty(meeting, "HTMLBody");
+                }
+                else
+                {
+                    return null;
+                }
 
                 if (string.IsNullOrEmpty(folderPath))
-                    try { folderPath = ((Outlook.MAPIFolder)mail.Parent)?.FolderPath ?? ""; } catch { folderPath = ""; }
+                    folderPath = GetOutlookItemFolderPath(item);
 
                 return new MailBodyDto { MailId = mailId, FolderPath = folderPath, Body = body, BodyHtml = bodyHtml };
             }
             catch { return null; }
-            finally { if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { } }
+            finally { if (item != null) try { Marshal.ReleaseComObject(item); } catch { } }
         }
 
         /// <summary>
@@ -856,17 +1131,26 @@ namespace OutlookAddIn
         /// </summary>
         public MailAttachmentsDto ReadMailAttachments(string mailId, string folderPath)
         {
-            Outlook.MailItem mail = null;
+            object item = null;
             try
             {
-                mail = FindMailByEntryId(mailId);
-                if (mail == null) return null;
+                item = FindOutlookItemByEntryId(mailId);
+                if (item == null) return null;
 
                 if (string.IsNullOrEmpty(folderPath))
-                    try { folderPath = ((Outlook.MAPIFolder)mail.Parent)?.FolderPath ?? ""; } catch { folderPath = ""; }
+                    folderPath = GetOutlookItemFolderPath(item);
 
                 var attachments = new List<MailAttachmentDto>();
-                var outlookAttachments = mail.Attachments;
+                Outlook.Attachments outlookAttachments = null;
+                var mail = item as Outlook.MailItem;
+                var meeting = item as Outlook.MeetingItem;
+                if (mail != null)
+                    outlookAttachments = mail.Attachments;
+                else if (meeting != null)
+                    outlookAttachments = meeting.Attachments;
+                else
+                    return null;
+
                 if (outlookAttachments != null)
                 {
                     for (int i = 1; i <= outlookAttachments.Count; i++)
@@ -904,7 +1188,7 @@ namespace OutlookAddIn
                 return new MailAttachmentsDto { MailId = mailId, FolderPath = folderPath, Attachments = attachments };
             }
             catch { return null; }
-            finally { if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { } }
+            finally { if (item != null) try { Marshal.ReleaseComObject(item); } catch { } }
         }
 
         /// <summary>
@@ -1045,6 +1329,48 @@ namespace OutlookAddIn
             finally { if (parent != null) try { Marshal.ReleaseComObject(parent); } catch { } }
         }
 
+        private static string GetOutlookItemFolderPath(object item)
+        {
+            Outlook.MAPIFolder parent = null;
+            try
+            {
+                var mail = item as Outlook.MailItem;
+                if (mail != null) parent = mail.Parent as Outlook.MAPIFolder;
+
+                var meeting = item as Outlook.MeetingItem;
+                if (meeting != null) parent = meeting.Parent as Outlook.MAPIFolder;
+
+                return parent?.FolderPath ?? "";
+            }
+            catch { return ""; }
+            finally { if (parent != null) try { Marshal.ReleaseComObject(parent); } catch { } }
+        }
+
+        private object FindOutlookItemByEntryId(string entryId)
+        {
+            if (string.IsNullOrEmpty(entryId)) return null;
+            try
+            {
+                return this.Application.Session.GetItemFromID(entryId);
+            }
+            catch { return null; }
+        }
+
+        private static string TryReadComStringProperty(object item, string propertyName)
+        {
+            if (item == null || string.IsNullOrEmpty(propertyName)) return "";
+            try
+            {
+                return Convert.ToString(item.GetType().InvokeMember(
+                    propertyName,
+                    BindingFlags.GetProperty,
+                    null,
+                    item,
+                    null)) ?? "";
+            }
+            catch { return ""; }
+        }
+
         /// <summary>
         /// Exports a single attachment to the Hub attachment root directory.
         /// Resolves the Outlook 1-based index from: req.Index > req.AttachmentId (parsed) > req.AttachmentIndex (legacy).
@@ -1052,13 +1378,22 @@ namespace OutlookAddIn
         /// </summary>
         public ExportedMailAttachmentDto ExportMailAttachment(OutlookCommandExportMailAttachmentRequest req)
         {
-            Outlook.MailItem mail = null;
+            object item = null;
             try
             {
-                mail = FindMailByEntryId(req.MailId);
-                if (mail == null) return null;
+                item = FindOutlookItemByEntryId(req.MailId);
+                if (item == null) return null;
 
-                var outlookAttachments = mail.Attachments;
+                Outlook.Attachments outlookAttachments = null;
+                var mail = item as Outlook.MailItem;
+                var meeting = item as Outlook.MeetingItem;
+                if (mail != null)
+                    outlookAttachments = mail.Attachments;
+                else if (meeting != null)
+                    outlookAttachments = meeting.Attachments;
+                else
+                    return null;
+
                 if (outlookAttachments == null || outlookAttachments.Count == 0)
                 {
                     if (outlookAttachments != null) try { Marshal.ReleaseComObject(outlookAttachments); } catch { }
@@ -1126,7 +1461,7 @@ namespace OutlookAddIn
 
                     string folderPath = req.FolderPath ?? "";
                     if (string.IsNullOrEmpty(folderPath))
-                        try { folderPath = ((Outlook.MAPIFolder)mail.Parent)?.FolderPath ?? ""; } catch { }
+                        folderPath = GetOutlookItemFolderPath(item);
 
                     return new ExportedMailAttachmentDto
                     {
@@ -1161,7 +1496,7 @@ namespace OutlookAddIn
             }
             finally
             {
-                if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { }
+                if (item != null) try { Marshal.ReleaseComObject(item); } catch { }
             }
         }
     }

@@ -147,17 +147,10 @@ namespace OutlookAddIn
                 {
                     if (total >= maxCount) break;
 
-                    var mail = obj as Outlook.MailItem;
                     MailItemDto dto = null;
-                    if (mail == null)
-                    {
-                        if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { }
-                        continue;
-                    }
-
-                    try { dto = ReadMailListMetadataDto(mail, currentFolderPath); }
+                    try { dto = ReadMailListMetadataDto(obj, currentFolderPath); }
                     catch { }
-                    finally { try { Marshal.ReleaseComObject(mail); } catch { } }
+                    finally { if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { } }
 
                     if (dto == null)
                         continue;
@@ -295,17 +288,10 @@ namespace OutlookAddIn
                 {
                     if (results.Count >= maxCount) break;
 
-                    var mail = obj as Outlook.MailItem;
                     MailItemDto dto = null;
-                    if (mail == null)
-                    {
-                        if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { }
-                        continue;
-                    }
-
-                    try { dto = ReadMailListMetadataDto(mail, currentFolderPath); }
+                    try { dto = ReadMailListMetadataDto(obj, currentFolderPath); }
                     catch { }
-                    finally { try { Marshal.ReleaseComObject(mail); } catch { } }
+                    finally { if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { } }
 
                     if (dto != null)
                         results.Add(dto);

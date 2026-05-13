@@ -441,7 +441,7 @@ namespace OutlookAddIn
             if (string.IsNullOrEmpty(entryId)) return null;
             try
             {
-                var item = this.Application.Session.GetItemFromID(entryId);
+                var item = FindOutlookItemByEntryId(entryId);
                 var mail = item as Outlook.MailItem;
                 if (mail != null) return mail;
                 try { if (item != null) Marshal.ReleaseComObject(item); } catch { }
