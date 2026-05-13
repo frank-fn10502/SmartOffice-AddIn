@@ -133,7 +133,7 @@ namespace OutlookAddIn
                 }
                 catch { }
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "fetch_folder_roots error: " + SanitizeExceptionForLog(ex));
+                    "fetch_folder_roots error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
         }
 
@@ -194,7 +194,7 @@ namespace OutlookAddIn
                 }
                 catch { }
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "fetch_folder_children error: " + SanitizeExceptionForLog(ex));
+                    "fetch_folder_children error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
         }
 

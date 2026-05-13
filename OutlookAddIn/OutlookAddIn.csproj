@@ -330,20 +330,21 @@
     <Compile Include="Clients\HubClient.cs" />
     <Compile Include="Clients\SignalRClient.cs" />
     <Compile Include="Domain\Folders\FolderFilter.cs" />
+    <Compile Include="Application\OutlookCommandHandlers.cs" />
+    <Compile Include="Infrastructure\Diagnostics\SensitiveLogSanitizer.cs" />
+    <Compile Include="Infrastructure\Threading\OutlookThreadInvoker.cs" />
+    <Compile Include="Outlook\Calendar\CalendarReader.cs" />
+    <Compile Include="Outlook\Categories\CategoryReader.cs" />
+    <Compile Include="Outlook\Folders\FolderDiscovery.cs" />
+    <Compile Include="Outlook\Mail\FolderMailSliceReader.cs" />
+    <Compile Include="Outlook\Mail\MailMutationHandlers.cs" />
+    <Compile Include="Outlook\Mail\MailReader.cs" />
+    <Compile Include="Outlook\Rules\RuleAutomation.cs" />
+    <Compile Include="Outlook\Search\MailSearchReader.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Ribbon\SmartOfficeRibbon.cs" />
-    <Compile Include="ThisAddIn.Calendar.cs" />
-    <Compile Include="ThisAddIn.Categories.cs" />
-    <Compile Include="ThisAddIn.FolderMails.cs" />
-    <Compile Include="ThisAddIn.Folders.cs" />
-    <Compile Include="ThisAddIn.Helpers.cs" />
-    <Compile Include="ThisAddIn.Mails.cs" />
-    <Compile Include="ThisAddIn.Polling.cs" />
-    <Compile Include="ThisAddIn.Readers.cs" />
-    <Compile Include="ThisAddIn.Rules.cs" />
-    <Compile Include="ThisAddIn.Search.cs" />
     <EmbeddedResource Include="UI\ChatPane.resx">
       <DependentUpon>ChatPane.cs</DependentUpon>
     </EmbeddedResource>

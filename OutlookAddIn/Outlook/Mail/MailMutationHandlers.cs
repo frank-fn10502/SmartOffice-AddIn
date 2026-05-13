@@ -148,7 +148,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "update_mail_properties failed: " + SanitizeExceptionForLog(ex));
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "update_mail_properties failed: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
             finally
             {
@@ -202,7 +202,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "move_mail failed: " + SanitizeExceptionForLog(ex));
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "move_mail failed: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
             finally
             {
@@ -267,7 +267,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "create_folder failed: " + SanitizeExceptionForLog(ex));
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "create_folder failed: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
             finally
             {
@@ -353,7 +353,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "delete_folder failed: " + SanitizeExceptionForLog(ex));
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "delete_folder failed: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
             finally
             {
@@ -430,7 +430,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "upsert_category failed: " + SanitizeExceptionForLog(ex));
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "upsert_category failed: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
         }
 
@@ -540,7 +540,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "delete_mail failed: " + SanitizeExceptionForLog(ex));
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "delete_mail failed: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
             finally
             {
@@ -651,7 +651,7 @@ namespace OutlookAddIn
             catch (Exception ex)
             {
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "move_mails failed: " + SanitizeExceptionForLog(ex));
+                    "move_mails failed: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
             finally
             {

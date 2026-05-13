@@ -47,7 +47,7 @@ namespace OutlookAddIn
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine("ReadRules store error: " + SanitizeExceptionForLog(ex));
+                            System.Diagnostics.Debug.WriteLine("ReadRules store error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
                         }
                         finally
                         {
@@ -126,7 +126,7 @@ namespace OutlookAddIn
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine("ReadRules item error: " + SanitizeExceptionForLog(ex));
+                        System.Diagnostics.Debug.WriteLine("ReadRules item error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
                     }
                     finally
                     {
@@ -295,7 +295,7 @@ namespace OutlookAddIn
             if (ruleEx != null)
             {
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "manage_rule error: " + SanitizeExceptionForLog(ruleEx));
+                    "manage_rule error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ruleEx));
                 return;
             }
 

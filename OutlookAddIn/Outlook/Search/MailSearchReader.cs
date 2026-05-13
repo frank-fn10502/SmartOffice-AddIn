@@ -69,53 +69,13 @@ namespace OutlookAddIn
                 string mode = req.ExecutionMode?.ToLower() ?? "outlook_search";
                 if (mode == "items_filter")
                 {
-                    total = await PushMailSearchSliceItemsFilterFromOutlookAsync(cmd, req, batchSize);
+                    List<MailItemDto> mails = await _outlookThread.InvokeAsync(() => ExecuteMailSearchSliceItemsFilter(req));
+                    total = await PushMailSearchBatchesAsync(cmd, req, searchId, batchSize, mails ?? new List<MailItemDto>());
                 }
                 else
                 {
-                    List<MailItemDto> mails = null;
-                    Exception searchEx = null;
-                    _chatPane.Invoke((Action)(() =>
-                    {
-                        try { mails = ExecuteMailSearchSliceAdvancedSearch(req); }
-                        catch (Exception ex) { searchEx = ex; }
-                    }));
-
-                    if (searchEx != null)
-                        throw searchEx;
-
-                    var allMails = mails ?? new List<MailItemDto>();
-                    total = allMails.Count;
-                    int sequence = 1;
-
-                    if (total == 0)
-                    {
-                        await _signalRClient.PushMailSearchSliceResultAsync(new MailSearchSliceResultDto
-                        {
-                            SearchId = searchId,
-                            CommandId = cmd.Id,
-                            ParentCommandId = req.ParentCommandId ?? "",
-                            Sequence = sequence,
-                            SliceIndex = req.SliceIndex,
-                            SliceCount = req.SliceCount,
-                            Reset = req.ResetSearchResults,
-                            IsFinal = req.CompleteSearchOnSlice,
-                            IsSliceComplete = true,
-                            Mails = new List<MailItemDto>(),
-                            Message = ""
-                        });
-                    }
-                    else
-                    {
-                        for (int offset = 0; offset < total; offset += batchSize)
-                        {
-                            int count = Math.Min(batchSize, total - offset);
-                            var batch = allMails.GetRange(offset, count);
-                            bool isLastBatch = (offset + count >= total);
-
-                            await PushMailSearchBatchAsync(cmd, req, searchId, sequence++, batch, isLastBatch, isLastBatch && req.CompleteSearchOnSlice);
-                        }
-                    }
+                    List<MailItemDto> mails = await _outlookThread.InvokeAsync(() => ExecuteMailSearchSliceAdvancedSearch(req));
+                    total = await PushMailSearchBatchesAsync(cmd, req, searchId, batchSize, mails ?? new List<MailItemDto>());
                 }
 
                 if (req.CompleteSearchOnSlice)
@@ -141,10 +101,10 @@ namespace OutlookAddIn
                     CommandId = cmd.Id,
                     ParentCommandId = req.ParentCommandId ?? "",
                     Success = false,
-                    Message = "fetch_mail_search_slice error: " + SanitizeExceptionForLog(ex)
+                    Message = "fetch_mail_search_slice error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex)
                 });
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "fetch_mail_search_slice error: " + SanitizeExceptionForLog(ex));
+                    "fetch_mail_search_slice error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
         }
 
@@ -272,6 +232,47 @@ namespace OutlookAddIn
                 Mails = mails ?? new List<MailItemDto>(),
                 Message = ""
             });
+        }
+
+        private async Task<int> PushMailSearchBatchesAsync(
+            OutlookCommand cmd,
+            OutlookCommandMailSearchSliceRequest req,
+            string searchId,
+            int batchSize,
+            List<MailItemDto> allMails)
+        {
+            int total = allMails?.Count ?? 0;
+            int sequence = 1;
+
+            if (total == 0)
+            {
+                await PushMailSearchBatchAsync(
+                    cmd,
+                    req,
+                    searchId,
+                    sequence,
+                    new List<MailItemDto>(),
+                    true,
+                    req.CompleteSearchOnSlice);
+                return total;
+            }
+
+            for (int offset = 0; offset < total; offset += batchSize)
+            {
+                int count = Math.Min(batchSize, total - offset);
+                var batch = allMails.GetRange(offset, count);
+                bool isLastBatch = offset + count >= total;
+                await PushMailSearchBatchAsync(
+                    cmd,
+                    req,
+                    searchId,
+                    sequence++,
+                    batch,
+                    isLastBatch,
+                    isLastBatch && req.CompleteSearchOnSlice);
+            }
+
+            return total;
         }
 
         /// <summary>

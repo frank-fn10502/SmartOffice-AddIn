@@ -65,7 +65,8 @@ namespace OutlookAddIn
                     ? Math.Max(1, Math.Min(500, req.MaxCount))
                     : 30;
 
-                int total = await PushFolderMailsSliceFromOutlookAsync(cmd, req, batchSize, maxCount);
+                List<MailItemDto> mails = await _outlookThread.InvokeAsync(() => ReadFolderMailsSlice(req, maxCount));
+                int total = await PushFolderMailsBatchesAsync(cmd, req, batchSize, mails ?? new List<MailItemDto>());
 
                 if (req.CompleteOnSlice)
                 {
@@ -90,10 +91,10 @@ namespace OutlookAddIn
                     CommandId = cmd.Id,
                     ParentCommandId = req.ParentCommandId ?? "",
                     Success = false,
-                    Message = "fetch_folder_mails_slice error: " + SanitizeExceptionForLog(ex)
+                    Message = "fetch_folder_mails_slice error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex)
                 });
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, false,
-                    "fetch_folder_mails_slice error: " + SanitizeExceptionForLog(ex));
+                    "fetch_folder_mails_slice error: " + OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex));
             }
         }
 
@@ -212,6 +213,110 @@ namespace OutlookAddIn
                 Mails = mails ?? new List<MailItemDto>(),
                 Message = ""
             });
+        }
+
+        private async Task<int> PushFolderMailsBatchesAsync(
+            OutlookCommand cmd,
+            OutlookCommandFolderMailsSliceRequest req,
+            int batchSize,
+            List<MailItemDto> allMails)
+        {
+            string folderMailsId = req.FolderMailsId ?? "";
+            int total = allMails?.Count ?? 0;
+            int sequence = 1;
+
+            if (total == 0)
+            {
+                await PushFolderMailsBatchAsync(
+                    cmd,
+                    req,
+                    folderMailsId,
+                    sequence,
+                    new List<MailItemDto>(),
+                    true,
+                    req.CompleteOnSlice);
+                return total;
+            }
+
+            for (int offset = 0; offset < total; offset += batchSize)
+            {
+                int count = Math.Min(batchSize, total - offset);
+                var batch = allMails.GetRange(offset, count);
+                bool isLastBatch = offset + count >= total;
+                await PushFolderMailsBatchAsync(
+                    cmd,
+                    req,
+                    folderMailsId,
+                    sequence++,
+                    batch,
+                    isLastBatch,
+                    isLastBatch && req.CompleteOnSlice);
+            }
+
+            return total;
+        }
+
+        private List<MailItemDto> ReadFolderMailsSlice(
+            OutlookCommandFolderMailsSliceRequest req,
+            int maxCount)
+        {
+            var results = new List<MailItemDto>();
+
+            Outlook.MAPIFolder folder = null;
+            Outlook.Items items = null;
+            Outlook.Items filtered = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(req.FolderEntryId))
+                    folder = GetFolderByEntryIdInStore(req.StoreId, req.FolderEntryId);
+
+                if (folder == null && !string.IsNullOrEmpty(req.FolderPath))
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        "ReadFolderMailsSlice: folderEntryId could not be resolved; using folderPath fallback");
+                    folder = GetFolderByPathInStore(req.StoreId, req.FolderPath);
+                }
+
+                if (folder == null)
+                    return results;
+
+                string currentFolderPath = "";
+                try { currentFolderPath = folder.FolderPath ?? ""; } catch { }
+
+                items = folder.Items;
+
+                string filterExpr = BuildFolderMailsFilter(req.ReceivedFrom, req.ReceivedTo);
+                filtered = filterExpr != null ? items.Restrict(filterExpr) : items;
+
+                foreach (var obj in filtered)
+                {
+                    if (results.Count >= maxCount) break;
+
+                    var mail = obj as Outlook.MailItem;
+                    MailItemDto dto = null;
+                    if (mail == null)
+                    {
+                        if (obj != null) try { Marshal.ReleaseComObject(obj); } catch { }
+                        continue;
+                    }
+
+                    try { dto = ReadMailListMetadataDto(mail, currentFolderPath); }
+                    catch { }
+                    finally { try { Marshal.ReleaseComObject(mail); } catch { } }
+
+                    if (dto != null)
+                        results.Add(dto);
+                }
+            }
+            finally
+            {
+                if (filtered != null && !ReferenceEquals(filtered, items))
+                    try { Marshal.ReleaseComObject(filtered); } catch { }
+                if (items != null) try { Marshal.ReleaseComObject(items); } catch { }
+                if (folder != null) try { Marshal.ReleaseComObject(folder); } catch { }
+            }
+
+            return results;
         }
 
         private static string BuildFolderMailsFilter(DateTime? receivedFrom, DateTime? receivedTo)

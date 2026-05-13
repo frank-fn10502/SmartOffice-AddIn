@@ -583,7 +583,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                error = SanitizeExceptionForLog(ex);
+                error = OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex);
                 System.Diagnostics.Debug.WriteLine("ReadMails error: " + ex);
             }
             finally
@@ -650,7 +650,7 @@ namespace OutlookAddIn
             }
             catch (Exception ex)
             {
-                error = SanitizeExceptionForLog(ex);
+                error = OutlookAddIn.Infrastructure.Diagnostics.SensitiveLogSanitizer.Sanitize(ex);
                 System.Diagnostics.Debug.WriteLine("TryReadMailsFromTable failed: " + ex.Message);
                 mails.Clear();
                 return false;
