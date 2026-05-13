@@ -112,6 +112,9 @@ namespace OutlookAddIn.Application
                 case "fetch_calendar":
                     await HandleFetchCalendarAsync(cmd).ConfigureAwait(false);
                     break;
+                case "fetch_address_book":
+                    await HandleFetchAddressBookAsync(cmd).ConfigureAwait(false);
+                    break;
                 case "update_mail_properties":
                     await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleUpdateMailPropertiesAsync(cmd)).ConfigureAwait(false);
                     break;
@@ -307,6 +310,22 @@ namespace OutlookAddIn.Application
             List<CalendarEventDto> events = await _outlookThread.InvokeAsync(() => _automation.ReadCalendarEvents(calStart, calEnd)).ConfigureAwait(false);
             await _signalRClient.PushCalendarAsync(events ?? new List<CalendarEventDto>()).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_calendar completed. Items: " + (events?.Count ?? 0)).ConfigureAwait(false);
+        }
+
+        private async Task HandleFetchAddressBookAsync(OutlookCommand cmd)
+        {
+            var request = new AddressBookSyncRequest
+            {
+                IncludeOutlookContacts = cmd.AddressBookRequest == null || cmd.AddressBookRequest.IncludeOutlookContacts,
+                IncludeAddressLists = cmd.AddressBookRequest == null || cmd.AddressBookRequest.IncludeAddressLists,
+                MaxContacts = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxContacts > 0 ? cmd.AddressBookRequest.MaxContacts : 1000,
+                MaxAddressEntriesPerList = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxAddressEntriesPerList > 0 ? cmd.AddressBookRequest.MaxAddressEntriesPerList : 500
+            };
+
+            await _signalRClient.ReportLogAsync("info", "fetch_address_book: starting").ConfigureAwait(false);
+            var contacts = await _outlookThread.InvokeAsync(() => _automation.ReadAddressBook(request)).ConfigureAwait(false);
+            await _signalRClient.PushAddressBookAsync(contacts ?? new List<AddressBookContactDto>()).ConfigureAwait(false);
+            await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_address_book completed. Items: " + (contacts?.Count ?? 0)).ConfigureAwait(false);
         }
     }
 }

@@ -5,6 +5,7 @@ using OutlookAddIn.Clients;
 using OutlookAddIn.Infrastructure.Threading;
 using OutlookAddIn.OutlookServices.Categories;
 using OutlookAddIn.OutlookServices.Calendar;
+using OutlookAddIn.OutlookServices.Contacts;
 using OutlookAddIn.OutlookServices.Rules;
 using SmartOffice.Hub.Contracts;
 
@@ -15,6 +16,7 @@ namespace OutlookAddIn.Application
         private readonly ThisAddIn _addin;
         private readonly OutlookCategoryReader _categoryReader;
         private readonly OutlookCalendarReader _calendarReader;
+        private readonly OutlookAddressBookReader _addressBookReader;
         private readonly OutlookRuleReader _ruleReader;
         private readonly OutlookRuleCommandHandler _ruleCommandHandler;
 
@@ -26,6 +28,7 @@ namespace OutlookAddIn.Application
             _addin = addin ?? throw new ArgumentNullException(nameof(addin));
             _categoryReader = new OutlookCategoryReader(addin.Application);
             _calendarReader = new OutlookCalendarReader(addin.Application);
+            _addressBookReader = new OutlookAddressBookReader(addin.Application);
             _ruleReader = new OutlookRuleReader(addin.Application);
             _ruleCommandHandler = new OutlookRuleCommandHandler(signalRClient, outlookThread, addin.Application);
         }
@@ -66,6 +69,9 @@ namespace OutlookAddIn.Application
 
         public List<CalendarEventDto> ReadCalendarEvents(DateTime start, DateTime end) =>
             _calendarReader.ReadCalendarEvents(start, end);
+
+        public List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request) =>
+            _addressBookReader.ReadAddressBook(request);
 
         public Task HandleFetchFolderRootsAsync(OutlookCommand command) =>
             _addin.HandleFetchFolderRootsAsync(command);
