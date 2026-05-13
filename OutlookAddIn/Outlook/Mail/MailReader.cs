@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using OutlookAddIn.OutlookServices.Common;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -284,7 +285,7 @@ namespace OutlookAddIn
                     ToRecipients = toRecipients,
                     CcRecipients = ccRecipients,
                     BccRecipients = bccRecipients,
-                    ReceivedTime = receivedTime == DateTime.MinValue ? DateTime.Now : receivedTime,
+                    ReceivedTime = OutlookDateFilter.ToTransportUtc(receivedTime == DateTime.MinValue ? DateTime.Now : receivedTime),
                     Body = body,
                     BodyHtml = bodyHtml,
                     FolderPath = folderPath,
@@ -298,9 +299,9 @@ namespace OutlookAddIn
                     AttachmentNames = attachmentNames,
                     FlagRequest = flagRequest,
                     FlagInterval = flagInterval,
-                    TaskStartDate = taskStartDate,
-                    TaskDueDate = taskDueDate,
-                    TaskCompletedDate = taskCompletedDate,
+                    TaskStartDate = OutlookDateFilter.ToTransportUtc(taskStartDate),
+                    TaskDueDate = OutlookDateFilter.ToTransportUtc(taskDueDate),
+                    TaskCompletedDate = OutlookDateFilter.ToTransportUtc(taskCompletedDate),
                     Importance = importance,
                     Sensitivity = sensitivity
                 };
@@ -427,7 +428,7 @@ namespace OutlookAddIn
                     ToRecipients = new List<OutlookRecipientDto>(),
                     CcRecipients = new List<OutlookRecipientDto>(),
                     BccRecipients = new List<OutlookRecipientDto>(),
-                    ReceivedTime = receivedTime == DateTime.MinValue ? DateTime.Now : receivedTime,
+                    ReceivedTime = OutlookDateFilter.ToTransportUtc(receivedTime == DateTime.MinValue ? DateTime.Now : receivedTime),
                     Body = "",
                     BodyHtml = "",
                     FolderPath = folderPath,
@@ -441,9 +442,9 @@ namespace OutlookAddIn
                     AttachmentNames = "",
                     FlagRequest = flagRequest,
                     FlagInterval = flagInterval,
-                    TaskStartDate = taskStartDate,
-                    TaskDueDate = taskDueDate,
-                    TaskCompletedDate = taskCompletedDate,
+                    TaskStartDate = OutlookDateFilter.ToTransportUtc(taskStartDate),
+                    TaskDueDate = OutlookDateFilter.ToTransportUtc(taskDueDate),
+                    TaskCompletedDate = OutlookDateFilter.ToTransportUtc(taskCompletedDate),
                     Importance = importance,
                     Sensitivity = sensitivity
                 };
@@ -565,11 +566,11 @@ namespace OutlookAddIn
                 string filterExpr;
                 if (since > DateTime.MinValue && until < DateTime.MaxValue)
                     filterExpr = string.Format("[ReceivedTime] >= '{0}' AND [ReceivedTime] <= '{1}'",
-                        since.ToString("MM/dd/yyyy HH:mm"), until.ToString("MM/dd/yyyy HH:mm"));
+                        OutlookDateFilter.FormatItemsDateTime(since), OutlookDateFilter.FormatItemsDateTime(until));
                 else if (since > DateTime.MinValue)
-                    filterExpr = string.Format("[ReceivedTime] >= '{0}'", since.ToString("MM/dd/yyyy HH:mm"));
+                    filterExpr = string.Format("[ReceivedTime] >= '{0}'", OutlookDateFilter.FormatItemsDateTime(since));
                 else if (until < DateTime.MaxValue)
-                    filterExpr = string.Format("[ReceivedTime] <= '{0}'", until.ToString("MM/dd/yyyy HH:mm"));
+                    filterExpr = string.Format("[ReceivedTime] <= '{0}'", OutlookDateFilter.FormatItemsDateTime(until));
                 else
                     filterExpr = null;
 
@@ -707,7 +708,7 @@ namespace OutlookAddIn
                 ToRecipients = new List<OutlookRecipientDto>(),
                 CcRecipients = new List<OutlookRecipientDto>(),
                 BccRecipients = new List<OutlookRecipientDto>(),
-                ReceivedTime = receivedTime,
+                ReceivedTime = OutlookDateFilter.ToTransportUtc(receivedTime),
                 Body = "",
                 BodyHtml = "",
                 FolderPath = folderPath,
@@ -1139,7 +1140,7 @@ namespace OutlookAddIn
                         ContentType = "",
                         Size = exportedSize,
                         ExportedPath = exportPath,
-                        ExportedAt = DateTime.Now
+                        ExportedAt = DateTime.UtcNow
                     };
                 }
                 catch (Exception ex)

@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using OutlookAddIn.OutlookServices.Common;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -351,10 +352,10 @@ namespace OutlookAddIn
 
             if (req.ReceivedFrom.HasValue)
                 parts.Add(string.Format("[ReceivedTime] >= '{0}'",
-                    req.ReceivedFrom.Value.ToString("MM/dd/yyyy HH:mm")));
+                    OutlookDateFilter.FormatItemsDateTime(req.ReceivedFrom.Value)));
             if (req.ReceivedTo.HasValue)
                 parts.Add(string.Format("[ReceivedTime] <= '{0}'",
-                    req.ReceivedTo.Value.ToString("MM/dd/yyyy HH:mm")));
+                    OutlookDateFilter.FormatItemsDateTime(req.ReceivedTo.Value)));
 
             return parts.Count > 0 ? string.Join(" AND ", parts) : null;
         }
@@ -659,10 +660,7 @@ namespace OutlookAddIn
 
         private static string FormatDaslDateTime(DateTime value)
         {
-            // Outlook DASL date-time comparison is locale-sensitive and should avoid seconds.
-            // For DASL namespace comparisons, use UTC value rendered in current locale format.
-            var utc = value.ToUniversalTime();
-            return utc.ToString("g", CultureInfo.CurrentCulture);
+            return OutlookDateFilter.FormatDaslDateTime(value);
         }
 
         private static string BuildAdvancedSearchScope(string folderPath)

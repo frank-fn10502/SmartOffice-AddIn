@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using OutlookAddIn.OutlookServices.Common;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -327,15 +328,15 @@ namespace OutlookAddIn
 
             if (receivedFrom.HasValue && receivedTo.HasValue)
                 return string.Format("[ReceivedTime] >= '{0}' AND [ReceivedTime] <= '{1}'",
-                    receivedFrom.Value.ToString("MM/dd/yyyy HH:mm"),
-                    receivedTo.Value.ToString("MM/dd/yyyy HH:mm"));
+                    OutlookDateFilter.FormatItemsDateTime(receivedFrom.Value),
+                    OutlookDateFilter.FormatItemsDateTime(receivedTo.Value));
 
             if (receivedFrom.HasValue)
                 return string.Format("[ReceivedTime] >= '{0}'",
-                    receivedFrom.Value.ToString("MM/dd/yyyy HH:mm"));
+                    OutlookDateFilter.FormatItemsDateTime(receivedFrom.Value));
 
             return string.Format("[ReceivedTime] <= '{0}'",
-                receivedTo.Value.ToString("MM/dd/yyyy HH:mm"));
+                OutlookDateFilter.FormatItemsDateTime(receivedTo.Value));
         }
     }
 }

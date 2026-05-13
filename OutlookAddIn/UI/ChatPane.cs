@@ -50,7 +50,7 @@ namespace OutlookAddIn.UI
                         Id = Guid.NewGuid().ToString(),
                         Source = "outlook",
                         Text = text,
-                        Timestamp = DateTime.Now
+                        Timestamp = DateTime.UtcNow
                     });
                 }
                 else

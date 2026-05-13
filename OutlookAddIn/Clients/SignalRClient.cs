@@ -198,7 +198,7 @@ namespace OutlookAddIn.Clients
                 {
                     Level = level,
                     Message = message,
-                    Timestamp = DateTime.Now
+                    Timestamp = DateTime.UtcNow
                 }).ConfigureAwait(false);
             }
             catch { }
@@ -215,7 +215,7 @@ namespace OutlookAddIn.Clients
                     Success = success,
                     Message = message,
                     Payload = payload,
-                    Timestamp = DateTime.Now
+                    Timestamp = DateTime.UtcNow
                 }).ConfigureAwait(false);
             }
             catch { }

@@ -40,8 +40,8 @@ namespace OutlookAddIn.OutlookServices.Calendar
                 var filter = string.Format(
                     CultureInfo.InvariantCulture,
                     "[Start] >= '{0}' AND [Start] < '{1}'",
-                    start.ToString("MM/dd/yyyy HH:mm", CultureInfo.InvariantCulture),
-                    end.ToString("MM/dd/yyyy HH:mm", CultureInfo.InvariantCulture));
+                    OutlookDateFilter.FormatItemsDateTime(start),
+                    OutlookDateFilter.FormatItemsDateTime(end));
                 restricted = items.Restrict(filter);
 
                 foreach (var obj in restricted)
@@ -98,8 +98,8 @@ namespace OutlookAddIn.OutlookServices.Calendar
             {
                 Id = ReadString(() => appointment.EntryID),
                 Subject = ReadString(() => appointment.Subject),
-                Start = ReadDate(() => appointment.Start),
-                End = ReadDate(() => appointment.End),
+                Start = OutlookDateFilter.ToTransportUtc(ReadDate(() => appointment.Start)),
+                End = OutlookDateFilter.ToTransportUtc(ReadDate(() => appointment.End)),
                 Location = ReadString(() => appointment.Location),
                 Organizer = organizerDto,
                 RequiredAttendees = ReadAttendees(appointment),

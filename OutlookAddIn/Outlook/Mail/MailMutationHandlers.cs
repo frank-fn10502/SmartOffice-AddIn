@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using OutlookAddIn.OutlookServices.Categories;
+using OutlookAddIn.OutlookServices.Common;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -44,7 +45,7 @@ namespace OutlookAddIn
                     mail.FlagRequest = string.IsNullOrEmpty(req.FlagRequest) ? "??" : req.FlagRequest;
                         mail.FlagStatus = Outlook.OlFlagStatus.olFlagComplete;
                         if (req.TaskCompletedDate.HasValue)
-                            try { mail.TaskCompletedDate = req.TaskCompletedDate.Value; } catch { }
+                            try { mail.TaskCompletedDate = OutlookDateFilter.ToOutlookLocalDateTime(req.TaskCompletedDate.Value); } catch { }
                         else
                             try { mail.TaskCompletedDate = DateTime.Today; } catch { }
                     }
@@ -82,8 +83,8 @@ namespace OutlookAddIn
                                 break;
                         }
 
-                        DateTime startDate = req.TaskStartDate ?? autoStart ?? DateTime.Today;
-                        DateTime dueDate = req.TaskDueDate ?? autoDue ?? DateTime.Today;
+                        DateTime startDate = OutlookDateFilter.ToOutlookLocalDateTime(req.TaskStartDate ?? autoStart ?? DateTime.Today);
+                        DateTime dueDate = OutlookDateFilter.ToOutlookLocalDateTime(req.TaskDueDate ?? autoDue ?? DateTime.Today);
                         if (req.FlagInterval != "no_date")
                         {
                             try { mail.TaskStartDate = startDate; } catch { }
