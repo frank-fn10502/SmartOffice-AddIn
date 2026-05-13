@@ -212,14 +212,27 @@ AddIn 只處理 Microsoft Outlook Rules object model 明確支援的 rule 管理
   "conditions": {
     "subjectContains": ["報價"],
     "bodyContains": [],
+    "bodyOrSubjectContains": [],
+    "messageHeaderContains": [],
     "senderAddressContains": ["example.com"],
+    "recipientAddressContains": [],
     "categories": ["客戶"],
-    "hasAttachment": true
+    "hasAttachment": true,
+    "importance": "high",
+    "toMe": false,
+    "toOrCcMe": false,
+    "onlyToMe": false,
+    "meetingInviteOrUpdate": false
   },
   "actions": {
     "moveToFolderPath": "\\\\主要信箱 - User\\Inbox\\客戶",
+    "copyToFolderPath": "",
     "assignCategories": ["客戶"],
-    "markAsTask": false,
+    "clearCategories": false,
+    "markAsTask": true,
+    "markAsTaskInterval": "this_week",
+    "delete": false,
+    "desktopAlert": true,
     "stopProcessingMoreRules": true
   }
 }
@@ -229,8 +242,8 @@ AddIn 只處理 Microsoft Outlook Rules object model 明確支援的 rule 管理
 - `ruleName`: 新增或更新後的 rule name；Outlook rules collection 的 rule name 不保證唯一，因此更新與刪除時也應帶 `originalExecutionOrder`。
 - `originalRuleName` / `originalExecutionOrder`: 更新、刪除或啟用/停用既有 rule 時用於定位原 rule；AddIn 可用 `Rules.Item(index)` 優先定位，必要時用 name fallback。
 - `ruleType`: `receive` 或 `send`，對應 Outlook `OlRuleType`。
-- `conditions`: 只包含 AddIn 必須支援建立的條件：subject contains、body contains、sender address contains、category 與 has attachment。`hasAttachment` 只支援 `true` 或省略；Outlook Rules object model 不提供可建立的「無附件」條件。
-- `actions`: 只包含 AddIn 必須支援建立的動作：move to folder、assign categories、mark as task、stop processing more rules。
+- `conditions`: 只包含 AddIn 必須支援建立的條件：subject contains、body contains、subject or body contains、message header contains、sender address contains、recipient address contains、category、has attachment、importance、to me、to or cc me、only to me、meeting invite/update。`hasAttachment` 只支援 `true` 或省略；Outlook Rules object model 不提供可建立的「無附件」條件。
+- `actions`: 只包含 AddIn 必須支援建立的動作：move to folder、copy to folder、assign categories、clear categories、mark as task、delete、desktop alert、stop processing more rules。`delete` 對應 Outlook rule action，不是 Hub mail delete command；不得擴充成永久刪除 API。
 
 AddIn 實作時應使用 `Store.GetRules()` 取得 rules collection。新增 rule 使用 `Rules.Create`；更新既有 rule 可修改 `Rule.Enabled`、`Rule.Name`、`Rule.ExecutionOrder`、支援的 `Rule.Conditions` 與 `Rule.Actions`；刪除 rule 使用 `Rules.Remove`；任何變更都必須呼叫 `Rules.Save(false)` 或等效流程保存。`Rules.Save` 可能因 Exchange 規則限制、空白條件/動作或使用者同時開啟 Rules and Alerts Wizard 而失敗；失敗時回 `ReportCommandResult(success=false)`，message 不得包含敏感資料。
 

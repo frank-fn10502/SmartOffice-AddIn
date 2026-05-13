@@ -276,8 +276,8 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 - [ ] `operation = "upsert"` 時，使用 Outlook `Rules.Create` 新增 rule，或用 `originalRuleName` + `originalExecutionOrder` 定位既有 rule 後修改支援的 definition。
 - [ ] `operation = "set_enabled"` 時，只修改既有 rule 的 `Enabled`。
 - [ ] `operation = "delete"` 時，使用 Outlook `Rules.Remove` 刪除指定 rule。
-- [ ] 支援建立的條件只包含 subject contains、body contains、sender address contains、category 與 has attachment；has attachment 只支援 `true`，不得承諾建立「無附件」rule。
-- [ ] 支援建立的動作只包含 move to folder、assign categories、mark as task 與 stop processing more rules。
+- [ ] 支援建立的條件包含 subject/body/body-or-subject/header text、sender/recipient address、category、has attachment、importance、to me、to or cc me、only to me、meeting invite/update；has attachment 只支援 `true`，不得承諾建立「無附件」rule。
+- [ ] 支援建立的動作包含 move/copy to folder、assign/clear categories、mark as task（含 interval）、delete、desktop alert 與 stop processing more rules。
 - [ ] 既有 rule 含 Rules object model 無法建立的特殊條件或動作時，仍可回推 snapshot，但 `canModifyDefinition = false`；AddIn 不得嘗試以自訂掃描或其他 automation 假裝支援。
 - [ ] 任何 rule 變更後都呼叫 `Rules.Save(false)` 或等效流程保存，並回推最新 `PushRules(rules)`。
 - [ ] `Rules.Save` 失敗時回 `ReportCommandResult(success=false)`，message 可診斷且不含敏感資料。
@@ -285,7 +285,7 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 驗收：
 
 - [ ] 回推的 rules 包含 rule name、enabled、order、conditions、actions、exceptions。
-- [ ] 可新增一條 subject/sender/category/attachment 條件搭配 move/category/task/stop 動作的 receive rule。
+- [ ] 可新增一條 subject/sender/recipient/category/attachment/importance 條件搭配 move/copy/category/task/delete/alert/stop 動作的 receive rule。
 - [ ] 可啟用/停用、刪除既有 rule。
 - [ ] 對 `canModifyDefinition = false` 的特殊 rule，不應送完整 definition 修改。
 

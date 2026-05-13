@@ -14,16 +14,28 @@ namespace OutlookAddIn.OutlookServices.Rules
         {
             "Subject",
             "Body",
+            "BodyOrSubject",
+            "MessageHeader",
             "SenderAddress",
+            "RecipientAddress",
             "Category",
-            "HasAttachment"
+            "HasAttachment",
+            "Importance",
+            "ToMe",
+            "ToOrCc",
+            "OnlyToMe",
+            "MeetingInviteOrUpdate"
         };
 
         private static readonly HashSet<string> SupportedRuleActions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "MoveToFolder",
+            "CopyToFolder",
             "AssignToCategory",
+            "ClearCategories",
             "MarkAsTask",
+            "Delete",
+            "DesktopAlert",
             "Stop"
         };
 

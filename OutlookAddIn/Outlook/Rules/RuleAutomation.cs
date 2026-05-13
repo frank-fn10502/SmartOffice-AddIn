@@ -208,9 +208,17 @@ namespace OutlookAddIn.OutlookServices.Rules
                         conditions = targetRule.Conditions;
                         ApplyTextRuleCondition(conditions.Subject, req.Conditions.SubjectContains, existingRule != null, "subject");
                         ApplyTextRuleCondition(conditions.Body, req.Conditions.BodyContains, existingRule != null, "body");
+                        ApplyTextRuleCondition(conditions.BodyOrSubject, req.Conditions.BodyOrSubjectContains, existingRule != null, "body or subject");
+                        ApplyTextRuleCondition(conditions.MessageHeader, req.Conditions.MessageHeaderContains, existingRule != null, "message header");
                         ApplySenderAddressCondition(conditions.SenderAddress, req.Conditions.SenderAddressContains, existingRule != null);
+                        ApplyRecipientAddressCondition(conditions.RecipientAddress, req.Conditions.RecipientAddressContains, existingRule != null);
                         ApplyCategoryCondition(conditions.Category, req.Conditions.Categories, existingRule != null);
                         ApplyHasAttachmentCondition(conditions.HasAttachment, req.Conditions.HasAttachment, existingRule != null);
+                        ApplyImportanceCondition(conditions.Importance, req.Conditions.Importance, existingRule != null);
+                        ApplySimpleRulePart(conditions.ToMe, req.Conditions.ToMe, existingRule != null, "to me");
+                        ApplySimpleRulePart(conditions.ToOrCc, req.Conditions.ToOrCcMe, existingRule != null, "to or cc me");
+                        ApplySimpleRulePart(conditions.OnlyToMe, req.Conditions.OnlyToMe, existingRule != null, "only to me");
+                        ApplySimpleRulePart(conditions.MeetingInviteOrUpdate, req.Conditions.MeetingInviteOrUpdate, existingRule != null, "meeting invite or update");
                     }
                     finally
                     {
@@ -225,8 +233,12 @@ namespace OutlookAddIn.OutlookServices.Rules
                     {
                         actions = targetRule.Actions;
                         ApplyMoveToFolderAction(actions.MoveToFolder, req.Actions.MoveToFolderPath, existingRule != null);
+                        ApplyMoveToFolderAction(actions.CopyToFolder, req.Actions.CopyToFolderPath, existingRule != null);
                         ApplyAssignToCategoryAction(actions.AssignToCategory, req.Actions.AssignCategories, existingRule != null);
-                        ApplyMarkAsTaskAction(actions.MarkAsTask, req.Actions.MarkAsTask, existingRule != null);
+                        ApplySimpleRulePart(actions.ClearCategories, req.Actions.ClearCategories, existingRule != null, "clear categories");
+                        ApplyMarkAsTaskAction(actions.MarkAsTask, req.Actions.MarkAsTask, req.Actions.MarkAsTaskInterval, existingRule != null);
+                        ApplySimpleRulePart(actions.Delete, req.Actions.Delete, existingRule != null, "delete");
+                        ApplySimpleRulePart(actions.DesktopAlert, req.Actions.DesktopAlert, existingRule != null, "desktop alert");
                         ApplyStopAction(actions.Stop, req.Actions.StopProcessingMoreRules);
                     }
                     finally
@@ -249,6 +261,11 @@ namespace OutlookAddIn.OutlookServices.Rules
         private void ApplySenderAddressCondition(object condition, List<string> values, bool disableWhenEmpty)
         {
             ApplyStringArrayRulePart(condition, "Address", values, disableWhenEmpty, "sender address");
+        }
+
+        private void ApplyRecipientAddressCondition(object condition, List<string> values, bool disableWhenEmpty)
+        {
+            ApplyStringArrayRulePart(condition, "Address", values, disableWhenEmpty, "recipient address");
         }
 
         private void ApplyCategoryCondition(object condition, List<string> values, bool disableWhenEmpty)
@@ -297,6 +314,27 @@ namespace OutlookAddIn.OutlookServices.Rules
             }
         }
 
+        private void ApplyImportanceCondition(object condition, string importance, bool disableWhenEmpty)
+        {
+            try
+            {
+                var normalized = (importance ?? "any").Trim().ToLowerInvariant();
+                if (normalized == "any")
+                {
+                    if (disableWhenEmpty)
+                        SetRulePartEnabled(condition, false, "importance");
+                    return;
+                }
+
+                SetComProperty(condition, "Importance", ToOutlookImportance(normalized), "importance");
+                SetRulePartEnabled(condition, true, "importance");
+            }
+            finally
+            {
+                ReleaseComObjectQuietly(condition);
+            }
+        }
+
         private void ApplyMoveToFolderAction(object action, string folderPath, bool disableWhenEmpty)
         {
             Outlook.MAPIFolder destFolder = null;
@@ -328,13 +366,13 @@ namespace OutlookAddIn.OutlookServices.Rules
             ApplyStringArrayRulePart(action, "Categories", categories, disableWhenEmpty, "assign category");
         }
 
-        private void ApplyMarkAsTaskAction(object action, bool markAsTask, bool disableWhenEmpty)
+        private void ApplyMarkAsTaskAction(object action, bool markAsTask, string interval, bool disableWhenEmpty)
         {
             try
             {
                 if (markAsTask)
                 {
-                    SetComProperty(action, "MarkInterval", Outlook.OlMarkInterval.olMarkToday, "mark as task");
+                    SetComProperty(action, "MarkInterval", ToOutlookMarkInterval(interval), "mark as task");
                     SetRulePartEnabled(action, true, "mark as task");
                 }
                 else if (disableWhenEmpty)
@@ -345,6 +383,19 @@ namespace OutlookAddIn.OutlookServices.Rules
             finally
             {
                 ReleaseComObjectQuietly(action);
+            }
+        }
+
+        private void ApplySimpleRulePart(object part, bool enabled, bool disableWhenEmpty, string label)
+        {
+            try
+            {
+                if (enabled || disableWhenEmpty)
+                    SetRulePartEnabled(part, enabled, label);
+            }
+            finally
+            {
+                ReleaseComObjectQuietly(part);
             }
         }
 
@@ -380,6 +431,36 @@ namespace OutlookAddIn.OutlookServices.Rules
             catch (Exception ex)
             {
                 throw new InvalidOperationException("manage_rule upsert: failed to apply " + label, ex);
+            }
+        }
+
+        private static Outlook.OlImportance ToOutlookImportance(string importance)
+        {
+            switch ((importance ?? "").Trim().ToLowerInvariant())
+            {
+                case "low":
+                    return Outlook.OlImportance.olImportanceLow;
+                case "high":
+                    return Outlook.OlImportance.olImportanceHigh;
+                default:
+                    return Outlook.OlImportance.olImportanceNormal;
+            }
+        }
+
+        private static Outlook.OlMarkInterval ToOutlookMarkInterval(string interval)
+        {
+            switch ((interval ?? "").Trim().ToLowerInvariant())
+            {
+                case "tomorrow":
+                    return Outlook.OlMarkInterval.olMarkTomorrow;
+                case "this_week":
+                    return Outlook.OlMarkInterval.olMarkThisWeek;
+                case "next_week":
+                    return Outlook.OlMarkInterval.olMarkNextWeek;
+                case "no_date":
+                    return Outlook.OlMarkInterval.olMarkNoDate;
+                default:
+                    return Outlook.OlMarkInterval.olMarkToday;
             }
         }
 
