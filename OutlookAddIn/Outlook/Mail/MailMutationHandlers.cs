@@ -167,12 +167,12 @@ namespace OutlookAddIn
                 return;
             }
 
-            Outlook.MailItem mail = null;
+            object item = null;
             Outlook.MAPIFolder dest = null;
             try
             {
-                mail = FindMailByEntryId(req.MailId);
-                if (mail == null)
+                item = FindOutlookItemByEntryId(req.MailId);
+                if (item == null)
                 {
                     await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "move_mail failed: mail not found");
                     return;
@@ -187,7 +187,7 @@ namespace OutlookAddIn
                 }
 
                 // Always move - never call MailItem.Delete()
-                var moved = mail.Move(dest);
+                var moved = MoveOutlookItem(item, dest);
                 try { if (moved != null) Marshal.ReleaseComObject(moved); } catch { }
 
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "move_mail completed.");
@@ -209,7 +209,7 @@ namespace OutlookAddIn
             finally
             {
                 if (dest != null) try { Marshal.ReleaseComObject(dest); } catch { }
-                if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { }
+                if (item != null) try { Marshal.ReleaseComObject(item); } catch { }
             }
         }
 
@@ -450,6 +450,33 @@ namespace OutlookAddIn
             return null;
         }
 
+        private static Outlook.MAPIFolder GetOutlookItemParentFolder(object item)
+        {
+            try
+            {
+                var mail = item as Outlook.MailItem;
+                if (mail != null) return mail.Parent as Outlook.MAPIFolder;
+
+                var meeting = item as Outlook.MeetingItem;
+                if (meeting != null) return meeting.Parent as Outlook.MAPIFolder;
+            }
+            catch { }
+            return null;
+        }
+
+        private static object MoveOutlookItem(object item, Outlook.MAPIFolder destination)
+        {
+            if (item == null || destination == null) return null;
+
+            var mail = item as Outlook.MailItem;
+            if (mail != null) return mail.Move(destination);
+
+            var meeting = item as Outlook.MeetingItem;
+            if (meeting != null) return meeting.Move(destination);
+
+            return null;
+        }
+
         /// <summary>
         /// Moves a single mail to the Deleted Items folder (locale-independent).
         /// MailItem.Delete() must never be called.
@@ -463,14 +490,14 @@ namespace OutlookAddIn
                 return;
             }
 
-            Outlook.MailItem mail = null;
+            object item = null;
             Outlook.MAPIFolder deletedItems = null;
             Outlook.MAPIFolder parentFolder = null;
             Outlook.Store store = null;
             try
             {
-                mail = FindMailByEntryId(req.MailId);
-                if (mail == null)
+                item = FindOutlookItemByEntryId(req.MailId);
+                if (item == null)
                 {
                     await _signalRClient.ReportCommandResultAsync(cmd.Id, false, "delete_mail failed: mail not found");
                     return;
@@ -480,7 +507,7 @@ namespace OutlookAddIn
                 // so that mails in PST / secondary stores go to the correct Deleted Items.
                 try
                 {
-                    parentFolder = (Outlook.MAPIFolder)mail.Parent;
+                    parentFolder = GetOutlookItemParentFolder(item);
                     store = parentFolder.Store;
                     deletedItems = store.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderDeletedItems);
                 }
@@ -507,7 +534,7 @@ namespace OutlookAddIn
                         _mailCurrentFolderPath = parentFolder.FolderPath ?? "";
                     else
                     {
-                        var _parentTmp = mail.Parent as Outlook.MAPIFolder;
+                        var _parentTmp = GetOutlookItemParentFolder(item);
                         try { _mailCurrentFolderPath = _parentTmp?.FolderPath ?? ""; }
                         finally { if (_parentTmp != null) try { Marshal.ReleaseComObject(_parentTmp); } catch { } }
                     }
@@ -523,7 +550,7 @@ namespace OutlookAddIn
                 }
 
                 // Move to Deleted Items - never Delete()
-                var moved = mail.Move(deletedItems);
+                var moved = MoveOutlookItem(item, deletedItems);
                 try { if (moved != null) Marshal.ReleaseComObject(moved); } catch { }
 
                 await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "delete_mail completed.");
@@ -549,7 +576,7 @@ namespace OutlookAddIn
                 if (store != null) try { Marshal.ReleaseComObject(store); } catch { }
                 if (parentFolder != null) try { Marshal.ReleaseComObject(parentFolder); } catch { }
                 if (deletedItems != null) try { Marshal.ReleaseComObject(deletedItems); } catch { }
-                if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { }
+                if (item != null) try { Marshal.ReleaseComObject(item); } catch { }
             }
         }
 
@@ -585,11 +612,11 @@ namespace OutlookAddIn
 
                 foreach (var mailId in req.MailIds)
                 {
-                    Outlook.MailItem mail = null;
+                    object item = null;
                     try
                     {
-                        mail = FindMailByEntryId(mailId);
-                        if (mail == null)
+                        item = FindOutlookItemByEntryId(mailId);
+                        if (item == null)
                         {
                             failCount++;
                             if (!req.ContinueOnError)
@@ -602,7 +629,7 @@ namespace OutlookAddIn
                         }
 
                         // Always move - never call Delete()
-                        var moved = mail.Move(dest);
+                        var moved = MoveOutlookItem(item, dest);
                         try { if (moved != null) Marshal.ReleaseComObject(moved); } catch { }
                         successCount++;
                     }
@@ -618,7 +645,7 @@ namespace OutlookAddIn
                     }
                     finally
                     {
-                        if (mail != null) try { Marshal.ReleaseComObject(mail); } catch { }
+                        if (item != null) try { Marshal.ReleaseComObject(item); } catch { }
                     }
                 }
 
