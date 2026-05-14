@@ -378,32 +378,31 @@ namespace OutlookAddIn.Application
                 if (newContacts.Count == 0) return;
                 var batches = BuildAddressBookBatches(newContacts, batchId, ref sequence, partialReset, false, safeSnapshot.Count);
                 partialReset = false;
-                pushChain = pushChain.ContinueWith(_ => PushAddressBookBatchesAsync(batches, false), TaskScheduler.Default).Unwrap();
+                pushChain = pushChain.ContinueWith(_ => PushAddressBookBatchesAsync(batches, true), TaskScheduler.Default).Unwrap();
             };
             var contacts = await _outlookThread.InvokeAsync(() => _automation.ReadAddressBook(request, publishSnapshot)).ConfigureAwait(false);
             await pushChain.ConfigureAwait(false);
-            await PushFinalAddressBookSnapshotAsync(contacts ?? new List<AddressBookContactDto>()).ConfigureAwait(false);
+            if (partialReset)
+                await PushEmptyAddressBookSnapshotAsync(batchId, sequence).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_address_book completed. Items: " + (contacts?.Count ?? 0)).ConfigureAwait(false);
         }
 
-        private async Task PushFinalAddressBookSnapshotAsync(List<AddressBookContactDto> contacts)
+        private async Task PushEmptyAddressBookSnapshotAsync(string batchId, int sequence)
         {
-            var batchId = Guid.NewGuid().ToString("N");
-            var sequence = 1;
-            var batches = BuildAddressBookBatches(contacts, batchId, ref sequence, true, true, contacts.Count);
-            if (batches.Count == 0)
-            {
-                batches.Add(new AddressBookBatchDto
+            await PushAddressBookBatchesAsync(
+                new List<AddressBookBatchDto>
                 {
-                    BatchId = batchId,
-                    Sequence = sequence,
-                    Reset = true,
-                    IsFinal = true,
-                    TotalCount = 0,
-                    Contacts = new List<AddressBookContactDto>()
-                });
-            }
-            await PushAddressBookBatchesAsync(batches, true).ConfigureAwait(false);
+                    new AddressBookBatchDto
+                    {
+                        BatchId = batchId,
+                        Sequence = sequence,
+                        Reset = true,
+                        IsFinal = true,
+                        TotalCount = 0,
+                        Contacts = new List<AddressBookContactDto>()
+                    }
+                },
+                true).ConfigureAwait(false);
         }
 
         private async Task PushAddressBookBatchesAsync(List<AddressBookBatchDto> batches, bool throwOnError)
