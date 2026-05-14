@@ -380,7 +380,11 @@ namespace OutlookAddIn.Application
                 partialReset = false;
                 pushChain = pushChain.ContinueWith(_ => PushAddressBookBatchesAsync(batches, true), TaskScheduler.Default).Unwrap();
             };
-            var contacts = await _outlookThread.InvokeAsync(() => _automation.ReadAddressBook(request, publishSnapshot)).ConfigureAwait(false);
+            List<AddressBookContactDto> contacts = null;
+            await _outlookThread.InvokeLegacyAsyncCommand(async () =>
+            {
+                contacts = await _automation.ReadAddressBookAsync(request, publishSnapshot).ConfigureAwait(true);
+            }).ConfigureAwait(false);
             await pushChain.ConfigureAwait(false);
             if (partialReset)
                 await PushEmptyAddressBookSnapshotAsync(batchId, sequence).ConfigureAwait(false);

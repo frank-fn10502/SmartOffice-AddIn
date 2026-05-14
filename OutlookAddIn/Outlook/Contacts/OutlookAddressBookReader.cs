@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System.Threading.Tasks;
 using SmartOffice.Hub.Contracts;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -11,30 +11,30 @@ namespace OutlookAddIn.OutlookServices.Contacts
     internal sealed class OutlookAddressBookReader
     {
         private readonly Outlook.Application _application;
-        private const int UiPumpInterval = 10;
+        private const int UiYieldInterval = 10;
 
         public OutlookAddressBookReader(Outlook.Application application)
         {
             _application = application ?? throw new ArgumentNullException(nameof(application));
         }
 
-        public List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null)
+        public async Task<List<AddressBookContactDto>> ReadAddressBookAsync(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null)
         {
             request = request ?? new AddressBookSyncRequest();
             var maxContacts = Clamp(request.MaxContacts, 1, 5000, 1000);
             var maxAddressEntriesPerList = Clamp(request.MaxAddressEntriesPerList, 1, 2000, 500);
             var maxGroupMembers = request.MaxGroupMembers < 0 ? 50 : Math.Min(request.MaxGroupMembers, 500);
             var maxGroupDepth = request.MaxGroupDepth < 0 ? 1 : Math.Min(request.MaxGroupDepth, 3);
-            var groupMemberReadBudget = Math.Min(maxContacts, 1000);
+            var groupMemberReadBudget = new IntBudget(Math.Min(maxContacts, 1000));
             var contacts = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
             var publishThreshold = 50;
-            var lastPublishedCount = 0;
+            var lastPublishedCount = new PublishCounter(0);
 
             if (request.IncludeOutlookContacts)
-                ReadDefaultContactsFolder(contacts, maxContacts, publishSnapshot, publishThreshold, ref lastPublishedCount);
+                await ReadDefaultContactsFolderAsync(contacts, maxContacts, publishSnapshot, publishThreshold, lastPublishedCount);
 
             if (request.IncludeAddressLists && contacts.Count < maxContacts)
-                ReadAddressLists(contacts, maxContacts, maxAddressEntriesPerList, maxGroupMembers, maxGroupDepth, ref groupMemberReadBudget, publishSnapshot, publishThreshold, ref lastPublishedCount);
+                await ReadAddressListsAsync(contacts, maxContacts, maxAddressEntriesPerList, maxGroupMembers, maxGroupDepth, groupMemberReadBudget, publishSnapshot, publishThreshold, lastPublishedCount);
 
             var result = contacts.Values
                 .OrderBy(item => item.DisplayName)
@@ -45,12 +45,12 @@ namespace OutlookAddIn.OutlookServices.Contacts
             return result;
         }
 
-        private void ReadDefaultContactsFolder(
+        private async Task ReadDefaultContactsFolderAsync(
             Dictionary<string, AddressBookContactDto> contacts,
             int maxContacts,
             Action<List<AddressBookContactDto>> publishSnapshot,
             int publishThreshold,
-            ref int lastPublishedCount)
+            PublishCounter lastPublishedCount)
         {
             Outlook.MAPIFolder folder = null;
             Outlook.Items items = null;
@@ -61,7 +61,6 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 items = folder?.Items;
                 if (items == null) return;
 
-                var processedSincePump = 0;
                 for (var i = 1; i <= items.Count && contacts.Count < maxContacts; i++)
                 {
                     object item = null;
@@ -75,8 +74,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                         AddContactItem(contacts, contact, 1);
                         AddContactItem(contacts, contact, 2);
                         AddContactItem(contacts, contact, 3);
-                        PublishIfNeeded(contacts, publishSnapshot, publishThreshold, ref lastPublishedCount);
-                        PumpOutlookUi(ref processedSincePump);
+                        PublishIfNeeded(contacts, publishSnapshot, publishThreshold, lastPublishedCount);
                     }
                     catch { }
                     finally
@@ -84,6 +82,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                         Release(contact);
                         if (!ReferenceEquals(item, contact)) Release(item);
                     }
+                    await YieldOutlookUiIfNeeded(i);
                 }
             }
             catch (Exception ex)
@@ -97,16 +96,16 @@ namespace OutlookAddIn.OutlookServices.Contacts
             }
         }
 
-        private void ReadAddressLists(
+        private async Task ReadAddressListsAsync(
             Dictionary<string, AddressBookContactDto> contacts,
             int maxContacts,
             int maxAddressEntriesPerList,
             int maxGroupMembers,
             int maxGroupDepth,
-            ref int groupMemberReadBudget,
+            IntBudget groupMemberReadBudget,
             Action<List<AddressBookContactDto>> publishSnapshot,
             int publishThreshold,
-            ref int lastPublishedCount)
+            PublishCounter lastPublishedCount)
         {
             Outlook.AddressLists lists = null;
 
@@ -128,22 +127,21 @@ namespace OutlookAddIn.OutlookServices.Contacts
                         if (entries == null) continue;
 
                         var entryLimit = Math.Min(entries.Count, maxAddressEntriesPerList);
-                        var processedSincePump = 0;
                         for (var entryIndex = 1; entryIndex <= entryLimit && contacts.Count < maxContacts; entryIndex++)
                         {
                             Outlook.AddressEntry entry = null;
                             try
                             {
                                 entry = entries[entryIndex];
-                                AddAddressEntry(contacts, entry, list, maxGroupMembers, maxGroupDepth, ref groupMemberReadBudget);
-                                PublishIfNeeded(contacts, publishSnapshot, publishThreshold, ref lastPublishedCount);
-                                PumpOutlookUi(ref processedSincePump);
+                                await AddAddressEntryAsync(contacts, entry, list, maxGroupMembers, maxGroupDepth, groupMemberReadBudget);
+                                PublishIfNeeded(contacts, publishSnapshot, publishThreshold, lastPublishedCount);
                             }
                             catch { }
                             finally
                             {
                                 Release(entry);
                             }
+                            await YieldOutlookUiIfNeeded(entryIndex);
                         }
                     }
                     catch { }
@@ -202,13 +200,13 @@ namespace OutlookAddIn.OutlookServices.Contacts
             });
         }
 
-        private static void AddAddressEntry(
+        private static async Task AddAddressEntryAsync(
             Dictionary<string, AddressBookContactDto> contacts,
             Outlook.AddressEntry entry,
             Outlook.AddressList list,
             int maxGroupMembers,
             int maxGroupDepth,
-            ref int groupMemberReadBudget)
+            IntBudget groupMemberReadBudget)
         {
             if (entry == null) return;
 
@@ -261,7 +259,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                     dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => distributionList.Name));
                     dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => distributionList.PrimarySmtpAddress));
                     dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
-                    ReadDistributionListMembers(distributionList, dto, maxGroupMembers, maxGroupDepth, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase), ref groupMemberReadBudget);
+                    await ReadDistributionListMembersAsync(distributionList, dto, maxGroupMembers, maxGroupDepth, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase), groupMemberReadBudget);
                 }
             }
             catch { }
@@ -276,16 +274,16 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 Upsert(contacts, dto);
         }
 
-        private static void ReadDistributionListMembers(
+        private static async Task ReadDistributionListMembersAsync(
             Outlook.ExchangeDistributionList distributionList,
             AddressBookContactDto dto,
             int maxGroupMembers,
             int maxGroupDepth,
             int depth,
             HashSet<string> visitedGroups,
-            ref int groupMemberReadBudget)
+            IntBudget groupMemberReadBudget)
         {
-            if (distributionList == null || maxGroupMembers <= 0 || depth > maxGroupDepth || groupMemberReadBudget <= 0) return;
+            if (distributionList == null || maxGroupMembers <= 0 || depth > maxGroupDepth || groupMemberReadBudget.Value <= 0) return;
             var groupKey = ReadString(() => distributionList.PrimarySmtpAddress);
             if (!string.IsNullOrWhiteSpace(groupKey) && !visitedGroups.Add(groupKey)) return;
 
@@ -294,11 +292,10 @@ namespace OutlookAddIn.OutlookServices.Contacts
             {
                 members = distributionList.GetExchangeDistributionListMembers();
                 if (members == null) return;
-                var limit = Math.Min(Math.Min(members.Count, maxGroupMembers - dto.MemberSmtpAddresses.Count), groupMemberReadBudget);
-                var processedSincePump = 0;
+                var limit = Math.Min(Math.Min(members.Count, maxGroupMembers - dto.MemberSmtpAddresses.Count), groupMemberReadBudget.Value);
                 for (var i = 1; i <= limit; i++)
                 {
-                    groupMemberReadBudget--;
+                    groupMemberReadBudget.Value--;
                     Outlook.AddressEntry member = null;
                     Outlook.ExchangeDistributionList nested = null;
                     try
@@ -313,9 +310,8 @@ namespace OutlookAddIn.OutlookServices.Contacts
                         if (nested != null && !string.IsNullOrWhiteSpace(smtp))
                         {
                             dto.MemberGroupSmtpAddresses.Add(smtp);
-                            ReadDistributionListMembers(nested, dto, maxGroupMembers, maxGroupDepth, depth + 1, visitedGroups, ref groupMemberReadBudget);
+                            await ReadDistributionListMembersAsync(nested, dto, maxGroupMembers, maxGroupDepth, depth + 1, visitedGroups, groupMemberReadBudget);
                         }
-                        PumpOutlookUi(ref processedSincePump);
                     }
                     catch { }
                     finally
@@ -323,6 +319,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                         Release(nested);
                         Release(member);
                     }
+                    await YieldOutlookUiIfNeeded(i);
                 }
                 dto.MemberCount = Math.Max(dto.MemberCount, members.Count);
             }
@@ -333,16 +330,29 @@ namespace OutlookAddIn.OutlookServices.Contacts
             }
         }
 
-        private static void PumpOutlookUi(ref int processedSincePump)
+        private static Task YieldOutlookUiIfNeeded(int processedCount)
         {
-            processedSincePump++;
-            if (processedSincePump < UiPumpInterval) return;
-            processedSincePump = 0;
-            try
+            return processedCount % UiYieldInterval == 0 ? Task.Delay(1) : Task.CompletedTask;
+        }
+
+        private sealed class PublishCounter
+        {
+            public PublishCounter(int value)
             {
-                Application.DoEvents();
+                Value = value;
             }
-            catch { }
+
+            public int Value { get; set; }
+        }
+
+        private sealed class IntBudget
+        {
+            public IntBudget(int value)
+            {
+                Value = value;
+            }
+
+            public int Value { get; set; }
         }
 
         private static void Upsert(Dictionary<string, AddressBookContactDto> contacts, AddressBookContactDto dto)
@@ -388,11 +398,11 @@ namespace OutlookAddIn.OutlookServices.Contacts
             Dictionary<string, AddressBookContactDto> contacts,
             Action<List<AddressBookContactDto>> publishSnapshot,
             int publishThreshold,
-            ref int lastPublishedCount)
+            PublishCounter lastPublishedCount)
         {
             if (publishSnapshot == null) return;
-            if (contacts.Count - lastPublishedCount < publishThreshold) return;
-            lastPublishedCount = contacts.Count;
+            if (contacts.Count - lastPublishedCount.Value < publishThreshold) return;
+            lastPublishedCount.Value = contacts.Count;
             publishSnapshot(CloneContacts(contacts.Values));
         }
 
