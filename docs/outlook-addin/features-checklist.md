@@ -280,7 +280,8 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 - [ ] AddIn 收到 `fetch_address_book`。
 - [ ] 讀取 Outlook default Contacts folder 的 `ContactItem` metadata。
 - [ ] 在設定允許時讀取 `Application.Session.AddressLists` 中可用的 Outlook address list / GAL metadata。
-- [ ] 尊重 `addressBookRequest.maxContacts` 與 `maxAddressEntriesPerList`，不得無限制枚舉大型 GAL。
+- [ ] 尊重 `addressBookRequest.maxContacts`、`maxAddressEntriesPerList`、`maxGroupMembers` 與 `maxGroupDepth`，不得無限制枚舉大型 GAL 或無限制展開 nested group。
+- [ ] Distribution list / group 要回填 `isGroup`、`memberCount`、有限的 `memberSmtpAddresses` 與 `memberGroupSmtpAddresses`；無法展開時仍回傳 group metadata。
 - [ ] 回推 `PushAddressBook(contacts)`；不得讀取 mail body。
 - [ ] 完成後回報 `ReportCommandResult`。
 

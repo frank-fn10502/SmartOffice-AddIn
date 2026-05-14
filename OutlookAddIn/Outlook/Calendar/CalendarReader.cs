@@ -262,10 +262,39 @@ namespace OutlookAddIn.OutlookServices.Calendar
             appointment.Location = request.Location ?? "";
             appointment.Body = request.Body ?? "";
             appointment.BusyStatus = ToBusyStatus(request.BusyStatus);
-            if (create && request.RequiredAttendees != null && request.RequiredAttendees.Count > 0)
+            var hasRequiredAttendees = request.RequiredAttendees != null && request.RequiredAttendees.Count > 0;
+            var hasResources = request.Resources != null && request.Resources.Count > 0;
+            if (hasRequiredAttendees || hasResources)
                 appointment.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
+            ClearRecipients(appointment);
             ApplyRequiredAttendees(appointment, request.RequiredAttendees);
             ApplyResourceRecipients(appointment, request.Resources);
+        }
+
+        private static void ClearRecipients(Outlook.AppointmentItem appointment)
+        {
+            Outlook.Recipients recipients = null;
+            try
+            {
+                recipients = appointment.Recipients;
+                for (int i = recipients.Count; i >= 1; i--)
+                {
+                    Outlook.Recipient recipient = null;
+                    try
+                    {
+                        recipient = recipients[i];
+                        recipient.Delete();
+                    }
+                    finally
+                    {
+                        Release(recipient);
+                    }
+                }
+            }
+            finally
+            {
+                Release(recipients);
+            }
         }
 
         private static void ApplyRequiredAttendees(Outlook.AppointmentItem appointment, List<OutlookRecipientDto> attendees)

@@ -21,13 +21,15 @@ namespace OutlookAddIn.OutlookServices.Contacts
             request = request ?? new AddressBookSyncRequest();
             var maxContacts = Clamp(request.MaxContacts, 1, 5000, 1000);
             var maxAddressEntriesPerList = Clamp(request.MaxAddressEntriesPerList, 1, 2000, 500);
+            var maxGroupMembers = request.MaxGroupMembers < 0 ? 50 : Math.Min(request.MaxGroupMembers, 500);
+            var maxGroupDepth = request.MaxGroupDepth < 0 ? 1 : Math.Min(request.MaxGroupDepth, 3);
             var contacts = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
 
             if (request.IncludeOutlookContacts)
                 ReadDefaultContactsFolder(contacts, maxContacts);
 
             if (request.IncludeAddressLists && contacts.Count < maxContacts)
-                ReadAddressLists(contacts, maxContacts, maxAddressEntriesPerList);
+                ReadAddressLists(contacts, maxContacts, maxAddressEntriesPerList, maxGroupMembers, maxGroupDepth);
 
             return contacts.Values
                 .OrderBy(item => item.DisplayName)
@@ -80,7 +82,12 @@ namespace OutlookAddIn.OutlookServices.Contacts
             }
         }
 
-        private void ReadAddressLists(Dictionary<string, AddressBookContactDto> contacts, int maxContacts, int maxAddressEntriesPerList)
+        private void ReadAddressLists(
+            Dictionary<string, AddressBookContactDto> contacts,
+            int maxContacts,
+            int maxAddressEntriesPerList,
+            int maxGroupMembers,
+            int maxGroupDepth)
         {
             Outlook.AddressLists lists = null;
 
@@ -108,7 +115,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                             try
                             {
                                 entry = entries[entryIndex];
-                                AddAddressEntry(contacts, entry, list);
+                                AddAddressEntry(contacts, entry, list, maxGroupMembers, maxGroupDepth);
                             }
                             catch { }
                             finally
@@ -173,7 +180,12 @@ namespace OutlookAddIn.OutlookServices.Contacts
             });
         }
 
-        private static void AddAddressEntry(Dictionary<string, AddressBookContactDto> contacts, Outlook.AddressEntry entry, Outlook.AddressList list)
+        private static void AddAddressEntry(
+            Dictionary<string, AddressBookContactDto> contacts,
+            Outlook.AddressEntry entry,
+            Outlook.AddressList list,
+            int maxGroupMembers,
+            int maxGroupDepth)
         {
             if (entry == null) return;
 
@@ -190,6 +202,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
 
             Outlook.ExchangeUser exchangeUser = null;
             Outlook.ContactItem contactItem = null;
+            Outlook.ExchangeDistributionList distributionList = null;
             try
             {
                 exchangeUser = entry.GetExchangeUser();
@@ -217,16 +230,80 @@ namespace OutlookAddIn.OutlookServices.Contacts
                     dto.BusinessTelephoneNumber = Prefer(dto.BusinessTelephoneNumber, ReadString(() => contactItem.BusinessTelephoneNumber));
                     dto.MobileTelephoneNumber = Prefer(dto.MobileTelephoneNumber, ReadString(() => contactItem.MobileTelephoneNumber));
                 }
+
+                distributionList = entry.GetExchangeDistributionList();
+                if (distributionList != null)
+                {
+                    dto.IsGroup = true;
+                    dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => distributionList.Name));
+                    dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => distributionList.PrimarySmtpAddress));
+                    dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
+                    ReadDistributionListMembers(distributionList, dto, maxGroupMembers, maxGroupDepth, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                }
             }
             catch { }
             finally
             {
+                Release(distributionList);
                 Release(contactItem);
                 Release(exchangeUser);
             }
 
             if (!string.IsNullOrWhiteSpace(dto.SmtpAddress) || !string.IsNullOrWhiteSpace(dto.DisplayName))
                 Upsert(contacts, dto);
+        }
+
+        private static void ReadDistributionListMembers(
+            Outlook.ExchangeDistributionList distributionList,
+            AddressBookContactDto dto,
+            int maxGroupMembers,
+            int maxGroupDepth,
+            int depth,
+            HashSet<string> visitedGroups)
+        {
+            if (distributionList == null || maxGroupMembers <= 0 || depth > maxGroupDepth) return;
+            var groupKey = ReadString(() => distributionList.PrimarySmtpAddress);
+            if (!string.IsNullOrWhiteSpace(groupKey) && !visitedGroups.Add(groupKey)) return;
+
+            Outlook.AddressEntries members = null;
+            try
+            {
+                members = distributionList.GetExchangeDistributionListMembers();
+                if (members == null) return;
+                var limit = Math.Min(members.Count, maxGroupMembers - dto.MemberSmtpAddresses.Count);
+                for (var i = 1; i <= limit; i++)
+                {
+                    Outlook.AddressEntry member = null;
+                    Outlook.ExchangeDistributionList nested = null;
+                    try
+                    {
+                        member = members[i];
+                        var smtp = SmtpFromAddressEntry(member);
+                        if (string.IsNullOrWhiteSpace(smtp)) smtp = ReadString(() => member.Address);
+                        if (!string.IsNullOrWhiteSpace(smtp) && !dto.MemberSmtpAddresses.Contains(smtp, StringComparer.OrdinalIgnoreCase))
+                            dto.MemberSmtpAddresses.Add(smtp);
+
+                        nested = member.GetExchangeDistributionList();
+                        if (nested != null && !string.IsNullOrWhiteSpace(smtp))
+                        {
+                            dto.MemberGroupSmtpAddresses.Add(smtp);
+                            ReadDistributionListMembers(nested, dto, maxGroupMembers, maxGroupDepth, depth + 1, visitedGroups);
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        Release(nested);
+                        Release(member);
+                    }
+                }
+                dto.MemberCount = Math.Max(dto.MemberCount, members.Count);
+            }
+            catch { }
+            finally
+            {
+                Release(members);
+            }
         }
 
         private static void Upsert(Dictionary<string, AddressBookContactDto> contacts, AddressBookContactDto dto)
@@ -240,6 +317,8 @@ namespace OutlookAddIn.OutlookServices.Contacts
             dto.IsKnown = true;
             dto.Sources = new List<string> { dto.Source };
             dto.RelationKinds = new List<string> { "address_book" };
+            dto.MemberSmtpAddresses = dto.MemberSmtpAddresses.Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
+            dto.MemberGroupSmtpAddresses = dto.MemberGroupSmtpAddresses.Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
 
             AddressBookContactDto current;
             if (!contacts.TryGetValue(key, out current))
@@ -259,6 +338,10 @@ namespace OutlookAddIn.OutlookServices.Contacts
             current.OfficeLocation = Prefer(current.OfficeLocation, dto.OfficeLocation);
             current.BusinessTelephoneNumber = Prefer(current.BusinessTelephoneNumber, dto.BusinessTelephoneNumber);
             current.MobileTelephoneNumber = Prefer(current.MobileTelephoneNumber, dto.MobileTelephoneNumber);
+            current.IsGroup = current.IsGroup || dto.IsGroup;
+            current.MemberCount = Math.Max(current.MemberCount, dto.MemberCount);
+            current.MemberSmtpAddresses = current.MemberSmtpAddresses.Concat(dto.MemberSmtpAddresses).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
+            current.MemberGroupSmtpAddresses = current.MemberGroupSmtpAddresses.Concat(dto.MemberGroupSmtpAddresses).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
             if (!current.Sources.Contains(dto.Source)) current.Sources.Add(dto.Source);
         }
 
@@ -325,6 +408,36 @@ namespace OutlookAddIn.OutlookServices.Contacts
         {
             var at = (email ?? "").LastIndexOf('@');
             return at >= 0 && at < email.Length - 1 ? email.Substring(at + 1).ToLowerInvariant() : "";
+        }
+
+        private static string SmtpFromAddressEntry(Outlook.AddressEntry entry)
+        {
+            if (entry == null) return "";
+            try
+            {
+                var user = entry.GetExchangeUser();
+                if (user != null)
+                {
+                    var smtp = user.PrimarySmtpAddress ?? "";
+                    Release(user);
+                    if (!string.IsNullOrWhiteSpace(smtp)) return smtp;
+                }
+            }
+            catch { }
+
+            try
+            {
+                var distributionList = entry.GetExchangeDistributionList();
+                if (distributionList != null)
+                {
+                    var smtp = distributionList.PrimarySmtpAddress ?? "";
+                    Release(distributionList);
+                    if (!string.IsNullOrWhiteSpace(smtp)) return smtp;
+                }
+            }
+            catch { }
+
+            return ReadString(() => entry.Address);
         }
 
         private static void Release(object obj)

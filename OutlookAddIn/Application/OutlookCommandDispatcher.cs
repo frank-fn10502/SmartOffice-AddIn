@@ -359,7 +359,9 @@ namespace OutlookAddIn.Application
                 IncludeOutlookContacts = cmd.AddressBookRequest == null || cmd.AddressBookRequest.IncludeOutlookContacts,
                 IncludeAddressLists = cmd.AddressBookRequest == null || cmd.AddressBookRequest.IncludeAddressLists,
                 MaxContacts = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxContacts > 0 ? cmd.AddressBookRequest.MaxContacts : 1000,
-                MaxAddressEntriesPerList = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxAddressEntriesPerList > 0 ? cmd.AddressBookRequest.MaxAddressEntriesPerList : 500
+                MaxAddressEntriesPerList = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxAddressEntriesPerList > 0 ? cmd.AddressBookRequest.MaxAddressEntriesPerList : 500,
+                MaxGroupMembers = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxGroupMembers > 0 ? cmd.AddressBookRequest.MaxGroupMembers : 50,
+                MaxGroupDepth = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxGroupDepth >= 0 ? cmd.AddressBookRequest.MaxGroupDepth : 1
             };
 
             await _signalRClient.ReportLogAsync("info", "fetch_address_book: starting").ConfigureAwait(false);
