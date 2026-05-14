@@ -124,7 +124,7 @@ Payload：
 
 所有 mail / folder delete 類 command 都是 soft delete。`delete_mail` 只允許把 mail 移到 Outlook default Deleted Items folder，不得永久刪除。`delete_folder` 也只允許把 folder 移到 Outlook default Deleted Items folder；AddIn 收到 command 時永遠只執行 move，不呼叫永久刪除 API。
 
-Calendar mutation 只能作用於 SmartOffice 建立的 event。AddIn 建立 event 時必須寫入 ownership marker，例如 Outlook `UserProperties`；收到 `update_calendar_event` 或 `delete_calendar_event` 時必須重新讀取 Outlook item 並確認 marker 存在。若 marker 不存在，回報 `ReportCommandResult(success=false, message="not_smartoffice_owned")`，不得用 subject、時間或 organizer 猜測 ownership。
+Calendar mutation 只能作用於 SmartOffice 建立的 event。AddIn 建立 event 時必須寫入 ownership marker，例如 Outlook `UserProperties`，並保存 `smartOfficeEventId`；收到 `update_calendar_event` 或 `delete_calendar_event` 時必須重新讀取 Outlook item，確認 ownership marker 存在且儲存的 `smartOfficeEventId` 與 request 相符。若 marker 不存在或 id 不相符，回報 `ReportCommandResult(success=false, message="not_smartoffice_owned")`，不得用 subject、時間或 organizer 猜測 ownership。
 
 Calendar `requiredAttendees` 是 Outlook meeting required recipients，`resources` 是 Outlook meeting room / equipment resource recipients。AddIn 應把每個 required attendee 加到 `AppointmentItem.Recipients`，並設定 recipient type 為 `olRequired`；每個 resource 則設定 recipient type 為 `olResource`。不要只把會議室名稱寫進 `Location`，也不要把會議室當成一般 required attendee。
 

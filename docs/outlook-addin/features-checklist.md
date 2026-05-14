@@ -266,8 +266,8 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 - [ ] 從 Outlook address lists 讀取可用 room/resource，回推 `PushCalendarRooms(rooms)`。
 - [ ] AddIn 收到 `create_calendar_event`。
 - [ ] 使用 Outlook `AppointmentItem` 建立 event，寫入 SmartOffice ownership marker，儲存後回推 calendar snapshot。
-- [ ] AddIn 收到 `update_calendar_event` 或 `delete_calendar_event` 時，必須先確認 Outlook item 有 SmartOffice ownership marker。
-- [ ] 非 SmartOffice-owned event 必須回報 `not_smartoffice_owned`，不得更新或刪除。
+- [ ] AddIn 收到 `update_calendar_event` 或 `delete_calendar_event` 時，必須先確認 Outlook item 有 SmartOffice ownership marker，且 `smartOfficeEventId` 與 request 相符。
+- [ ] 非 SmartOffice-owned event 或 `smartOfficeEventId` 不相符時，必須回報 `not_smartoffice_owned`，不得更新或刪除。
 
 驗收：
 

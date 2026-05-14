@@ -165,7 +165,7 @@ namespace OutlookAddIn.OutlookServices.Calendar
 
         public List<CalendarEventDto> UpdateCalendarEvent(CalendarEventCommandRequest request)
         {
-            var appointment = GetSmartOfficeAppointment(request?.EventId);
+            var appointment = GetSmartOfficeAppointment(request);
             try
             {
                 ApplyAppointmentFields(appointment, request, create: false);
@@ -180,7 +180,7 @@ namespace OutlookAddIn.OutlookServices.Calendar
 
         public List<CalendarEventDto> DeleteCalendarEvent(CalendarEventCommandRequest request)
         {
-            var appointment = GetSmartOfficeAppointment(request?.EventId);
+            var appointment = GetSmartOfficeAppointment(request);
             DateTime start;
             try { start = appointment.Start; } catch { start = DateTime.Now; }
             try
@@ -226,10 +226,13 @@ namespace OutlookAddIn.OutlookServices.Calendar
             };
         }
 
-        private Outlook.AppointmentItem GetSmartOfficeAppointment(string eventId)
+        private Outlook.AppointmentItem GetSmartOfficeAppointment(CalendarEventCommandRequest request)
         {
+            var eventId = request?.EventId;
             if (string.IsNullOrWhiteSpace(eventId))
                 throw new InvalidOperationException("missing_event_id");
+            if (string.IsNullOrWhiteSpace(request?.SmartOfficeEventId))
+                throw new InvalidOperationException("not_smartoffice_owned");
 
             object item = null;
             try
@@ -239,6 +242,9 @@ namespace OutlookAddIn.OutlookServices.Calendar
                 if (appointment == null)
                     throw new InvalidOperationException("calendar_event_not_found");
                 if (!IsSmartOfficeOwned(appointment))
+                    throw new InvalidOperationException("not_smartoffice_owned");
+                var storedSmartOfficeEventId = ReadUserPropertyString(appointment, SmartOfficeEventIdProperty);
+                if (!string.Equals(storedSmartOfficeEventId, request.SmartOfficeEventId.Trim(), StringComparison.Ordinal))
                     throw new InvalidOperationException("not_smartoffice_owned");
                 item = null;
                 return appointment;
