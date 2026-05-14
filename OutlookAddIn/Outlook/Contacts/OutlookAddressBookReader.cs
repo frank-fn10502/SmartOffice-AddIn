@@ -12,6 +12,8 @@ namespace OutlookAddIn.OutlookServices.Contacts
     {
         private readonly Outlook.Application _application;
         private const int UiYieldInterval = 10;
+        private const string PrSmtpAddress = "http://schemas.microsoft.com/mapi/proptag/0x39FE001E";
+        private const string PrEmailAddress = "http://schemas.microsoft.com/mapi/proptag/0x3003001E";
 
         public OutlookAddressBookReader(Outlook.Application application)
         {
@@ -21,9 +23,9 @@ namespace OutlookAddIn.OutlookServices.Contacts
         public async Task<List<AddressBookContactDto>> ReadAddressBookAsync(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null)
         {
             request = request ?? new AddressBookSyncRequest();
-            var maxContacts = Clamp(request.MaxContacts, 1, 5000, 1000);
-            var maxAddressEntriesPerList = Clamp(request.MaxAddressEntriesPerList, 1, 2000, 500);
-            var maxGroupMembers = request.MaxGroupMembers < 0 ? 50 : Math.Min(request.MaxGroupMembers, 500);
+            var maxContacts = LimitOrUnbounded(request.MaxContacts, 5000);
+            var maxAddressEntriesPerList = LimitOrUnbounded(request.MaxAddressEntriesPerList, 2000);
+            var maxGroupMembers = request.MaxGroupMembers < 0 ? 0 : Math.Min(request.MaxGroupMembers, 500);
             var maxGroupDepth = request.MaxGroupDepth < 0 ? 1 : Math.Min(request.MaxGroupDepth, 3);
             var groupMemberReadBudget = new IntBudget(Math.Min(maxContacts, 1000));
             var contacts = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
@@ -43,6 +45,56 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 .ToList();
             publishSnapshot?.Invoke(CloneContacts(result));
             return result;
+        }
+
+        public async Task<List<AddressBookContactDto>> ReadAddressBookGroupMembersAsync(AddressBookGroupMembersRequest request)
+        {
+            request = request ?? new AddressBookGroupMembersRequest();
+            var maxMembers = LimitOrUnbounded(request.MaxMembers, 5000);
+            Outlook.ExchangeDistributionList distributionList = null;
+            Outlook.AddressEntries members = null;
+            var result = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                distributionList = FindExchangeDistributionList(request);
+                if (distributionList == null) return new List<AddressBookContactDto>();
+
+                members = distributionList.GetExchangeDistributionListMembers();
+                if (members == null) return new List<AddressBookContactDto>();
+
+                var limit = Math.Min(members.Count, maxMembers);
+                for (var i = 1; i <= limit; i++)
+                {
+                    Outlook.AddressEntry member = null;
+                    try
+                    {
+                        member = members[i];
+                        var dto = await AddressEntryToContactAsync(member);
+                        if (dto != null) Upsert(result, dto);
+                    }
+                    catch { }
+                    finally
+                    {
+                        Release(member);
+                    }
+                    await YieldOutlookUiIfNeeded(i);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("ReadAddressBookGroupMembers error: " + ex);
+            }
+            finally
+            {
+                Release(members);
+                Release(distributionList);
+            }
+
+            return result.Values
+                .OrderBy(item => item.DisplayName)
+                .ThenBy(item => item.SmtpAddress)
+                .ToList();
         }
 
         private async Task ReadDefaultContactsFolderAsync(
@@ -221,57 +273,157 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 Source = AddressListSource(list),
             };
 
+            var userType = ReadAddressEntryUserType(entry);
+            if (!LooksLikeSmtpAddress(dto.SmtpAddress))
+                dto.SmtpAddress = "";
+            dto.SmtpAddress = Prefer(SmtpFromAddressEntryProperties(entry), dto.SmtpAddress);
+            dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
+            dto.IsGroup = IsDistributionListEntry(userType);
+
             Outlook.ExchangeUser exchangeUser = null;
-            Outlook.ContactItem contactItem = null;
             Outlook.ExchangeDistributionList distributionList = null;
             try
             {
-                exchangeUser = entry.GetExchangeUser();
-                if (exchangeUser != null)
+                if (!LooksLikeSmtpAddress(dto.SmtpAddress) && IsExchangeUserEntry(userType))
                 {
-                    dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => exchangeUser.Name));
-                    dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => exchangeUser.PrimarySmtpAddress));
-                    dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
-                    dto.CompanyName = ReadString(() => exchangeUser.CompanyName);
-                    dto.JobTitle = ReadString(() => exchangeUser.JobTitle);
-                    dto.Department = ReadString(() => exchangeUser.Department);
-                    dto.OfficeLocation = ReadString(() => exchangeUser.OfficeLocation);
-                    dto.BusinessTelephoneNumber = ReadString(() => exchangeUser.BusinessTelephoneNumber);
-                    dto.MobileTelephoneNumber = ReadString(() => exchangeUser.MobileTelephoneNumber);
+                    exchangeUser = entry.GetExchangeUser();
+                    if (exchangeUser != null)
+                    {
+                        dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => exchangeUser.Name));
+                        dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => exchangeUser.PrimarySmtpAddress));
+                        dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
+                    }
                 }
 
-                contactItem = entry.GetContact();
-                if (contactItem != null)
+                if (maxGroupMembers > 0 && IsDistributionListEntry(userType))
                 {
-                    dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => contactItem.FullName));
-                    dto.CompanyName = Prefer(dto.CompanyName, ReadString(() => contactItem.CompanyName));
-                    dto.JobTitle = Prefer(dto.JobTitle, ReadString(() => contactItem.JobTitle));
-                    dto.Department = Prefer(dto.Department, ReadString(() => contactItem.Department));
-                    dto.OfficeLocation = Prefer(dto.OfficeLocation, ReadString(() => contactItem.OfficeLocation));
-                    dto.BusinessTelephoneNumber = Prefer(dto.BusinessTelephoneNumber, ReadString(() => contactItem.BusinessTelephoneNumber));
-                    dto.MobileTelephoneNumber = Prefer(dto.MobileTelephoneNumber, ReadString(() => contactItem.MobileTelephoneNumber));
-                }
-
-                distributionList = entry.GetExchangeDistributionList();
-                if (distributionList != null)
-                {
-                    dto.IsGroup = true;
-                    dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => distributionList.Name));
-                    dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => distributionList.PrimarySmtpAddress));
-                    dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
-                    await ReadDistributionListMembersAsync(distributionList, dto, maxGroupMembers, maxGroupDepth, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase), groupMemberReadBudget);
+                    distributionList = entry.GetExchangeDistributionList();
+                    if (distributionList != null)
+                    {
+                        dto.IsGroup = true;
+                        dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => distributionList.Name));
+                        dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => distributionList.PrimarySmtpAddress));
+                        dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
+                        await ReadDistributionListMembersAsync(distributionList, dto, maxGroupMembers, maxGroupDepth, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase), groupMemberReadBudget);
+                    }
                 }
             }
             catch { }
             finally
             {
                 Release(distributionList);
-                Release(contactItem);
                 Release(exchangeUser);
             }
 
             if (!string.IsNullOrWhiteSpace(dto.SmtpAddress) || !string.IsNullOrWhiteSpace(dto.DisplayName))
                 Upsert(contacts, dto);
+        }
+
+        private async Task<AddressBookContactDto> AddressEntryToContactAsync(Outlook.AddressEntry entry)
+        {
+            if (entry == null) return null;
+            var userType = ReadAddressEntryUserType(entry);
+            var smtp = SmtpFromAddressEntryProperties(entry);
+            var dto = new AddressBookContactDto
+            {
+                Id = ReadString(() => entry.ID),
+                DisplayName = ReadString(() => entry.Name),
+                SmtpAddress = smtp,
+                RawAddress = string.IsNullOrWhiteSpace(smtp) ? ReadString(() => entry.Address) : smtp,
+                AddressType = ReadString(() => entry.Type),
+                EntryUserType = ReadString(() => entry.AddressEntryUserType.ToString()),
+                Source = "group_member",
+                IsGroup = IsDistributionListEntry(userType),
+            };
+
+            Outlook.ExchangeUser exchangeUser = null;
+            Outlook.ExchangeDistributionList distributionList = null;
+            try
+            {
+                if (!LooksLikeSmtpAddress(dto.SmtpAddress) && IsExchangeUserEntry(userType))
+                {
+                    exchangeUser = entry.GetExchangeUser();
+                    if (exchangeUser != null)
+                    {
+                        dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => exchangeUser.Name));
+                        dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => exchangeUser.PrimarySmtpAddress));
+                        dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
+                    }
+                }
+
+                if (IsDistributionListEntry(userType))
+                {
+                    distributionList = entry.GetExchangeDistributionList();
+                    if (distributionList != null)
+                    {
+                        dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => distributionList.Name));
+                        dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => distributionList.PrimarySmtpAddress));
+                        dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
+                        dto.MemberCount = ReadMemberCount(distributionList);
+                    }
+                }
+            }
+            catch { }
+            finally
+            {
+                Release(distributionList);
+                Release(exchangeUser);
+            }
+
+            await Task.CompletedTask;
+            return string.IsNullOrWhiteSpace(dto.SmtpAddress) && string.IsNullOrWhiteSpace(dto.DisplayName) ? null : dto;
+        }
+
+        private Outlook.ExchangeDistributionList FindExchangeDistributionList(AddressBookGroupMembersRequest request)
+        {
+            Outlook.AddressLists lists = null;
+            try
+            {
+                lists = _application.Session.AddressLists;
+                if (lists == null) return null;
+
+                for (var listIndex = 1; listIndex <= lists.Count; listIndex++)
+                {
+                    Outlook.AddressList list = null;
+                    Outlook.AddressEntries entries = null;
+                    try
+                    {
+                        list = lists[listIndex];
+                        if (!IsSupportedAddressList(list)) continue;
+
+                        entries = list.AddressEntries;
+                        if (entries == null) continue;
+                        for (var entryIndex = 1; entryIndex <= entries.Count; entryIndex++)
+                        {
+                            Outlook.AddressEntry entry = null;
+                            try
+                            {
+                                entry = entries[entryIndex];
+                                if (!AddressEntryMatchesGroup(entry, request)) continue;
+                                var distributionList = entry.GetExchangeDistributionList();
+                                if (distributionList != null) return distributionList;
+                            }
+                            catch { }
+                            finally
+                            {
+                                Release(entry);
+                            }
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        Release(entries);
+                        Release(list);
+                    }
+                }
+            }
+            finally
+            {
+                Release(lists);
+            }
+
+            return null;
         }
 
         private static async Task ReadDistributionListMembersAsync(
@@ -301,16 +453,19 @@ namespace OutlookAddIn.OutlookServices.Contacts
                     try
                     {
                         member = members[i];
-                        var smtp = SmtpFromAddressEntry(member);
+                        var smtp = SmtpFromAddressEntryProperties(member);
                         if (string.IsNullOrWhiteSpace(smtp)) smtp = ReadString(() => member.Address);
                         if (!string.IsNullOrWhiteSpace(smtp) && !dto.MemberSmtpAddresses.Contains(smtp, StringComparer.OrdinalIgnoreCase))
                             dto.MemberSmtpAddresses.Add(smtp);
 
-                        nested = member.GetExchangeDistributionList();
-                        if (nested != null && !string.IsNullOrWhiteSpace(smtp))
+                        if (depth < maxGroupDepth && IsDistributionListEntry(ReadAddressEntryUserType(member)))
                         {
-                            dto.MemberGroupSmtpAddresses.Add(smtp);
-                            await ReadDistributionListMembersAsync(nested, dto, maxGroupMembers, maxGroupDepth, depth + 1, visitedGroups, groupMemberReadBudget);
+                            nested = member.GetExchangeDistributionList();
+                            if (nested != null && !string.IsNullOrWhiteSpace(smtp))
+                            {
+                                dto.MemberGroupSmtpAddresses.Add(smtp);
+                                await ReadDistributionListMembersAsync(nested, dto, maxGroupMembers, maxGroupDepth, depth + 1, visitedGroups, groupMemberReadBudget);
+                            }
                         }
                     }
                     catch { }
@@ -487,10 +642,9 @@ namespace OutlookAddIn.OutlookServices.Contacts
             }
         }
 
-        private static int Clamp(int value, int min, int max, int fallback)
+        private static int LimitOrUnbounded(int value, int max)
         {
-            if (value <= 0) value = fallback;
-            return Math.Max(min, Math.Min(max, value));
+            return value <= 0 ? int.MaxValue : Math.Min(value, max);
         }
 
         private static string ReadString(Func<string> read)
@@ -516,34 +670,95 @@ namespace OutlookAddIn.OutlookServices.Contacts
             return at >= 0 && at < email.Length - 1 ? email.Substring(at + 1).ToLowerInvariant() : "";
         }
 
-        private static string SmtpFromAddressEntry(Outlook.AddressEntry entry)
+        private static bool LooksLikeSmtpAddress(string value)
+        {
+            var address = value ?? "";
+            var at = address.IndexOf('@');
+            return at > 0 && at < address.Length - 1;
+        }
+
+        private static Outlook.OlAddressEntryUserType? ReadAddressEntryUserType(Outlook.AddressEntry entry)
+        {
+            try { return entry.AddressEntryUserType; } catch { return null; }
+        }
+
+        private static bool IsExchangeUserEntry(Outlook.OlAddressEntryUserType? userType)
+        {
+            return userType == Outlook.OlAddressEntryUserType.olExchangeUserAddressEntry
+                || userType == Outlook.OlAddressEntryUserType.olExchangeRemoteUserAddressEntry;
+        }
+
+        private static bool IsDistributionListEntry(Outlook.OlAddressEntryUserType? userType)
+        {
+            return userType == Outlook.OlAddressEntryUserType.olExchangeDistributionListAddressEntry
+                || userType == Outlook.OlAddressEntryUserType.olOutlookDistributionListAddressEntry;
+        }
+
+        private static bool AddressEntryMatchesGroup(Outlook.AddressEntry entry, AddressBookGroupMembersRequest request)
+        {
+            if (entry == null || !IsDistributionListEntry(ReadAddressEntryUserType(entry))) return false;
+
+            var requestedId = (request.GroupId ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(requestedId)
+                && string.Equals(ReadString(() => entry.ID), requestedId, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var requestedSmtp = Normalize(request.GroupSmtpAddress);
+            if (string.IsNullOrWhiteSpace(requestedSmtp)) return false;
+            var smtp = Normalize(SmtpFromAddressEntryProperties(entry));
+            if (!string.IsNullOrWhiteSpace(smtp) && string.Equals(smtp, requestedSmtp, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return string.Equals(Normalize(ReadString(() => entry.Address)), requestedSmtp, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int ReadMemberCount(Outlook.ExchangeDistributionList distributionList)
+        {
+            Outlook.AddressEntries members = null;
+            try
+            {
+                members = distributionList.GetExchangeDistributionListMembers();
+                return members?.Count ?? 0;
+            }
+            catch
+            {
+                return 0;
+            }
+            finally
+            {
+                Release(members);
+            }
+        }
+
+        private static string SmtpFromAddressEntryProperties(Outlook.AddressEntry entry)
         {
             if (entry == null) return "";
+            var smtp = ReadPropertyString(entry, PrSmtpAddress);
+            if (!string.IsNullOrWhiteSpace(smtp)) return smtp;
+
+            smtp = ReadPropertyString(entry, PrEmailAddress);
+            if (!string.IsNullOrWhiteSpace(smtp) && smtp.Contains("@")) return smtp;
+
+            var address = ReadString(() => entry.Address);
+            return address.Contains("@") ? address : "";
+        }
+
+        private static string ReadPropertyString(Outlook.AddressEntry entry, string schemaName)
+        {
+            Outlook.PropertyAccessor accessor = null;
             try
             {
-                var user = entry.GetExchangeUser();
-                if (user != null)
-                {
-                    var smtp = user.PrimarySmtpAddress ?? "";
-                    Release(user);
-                    if (!string.IsNullOrWhiteSpace(smtp)) return smtp;
-                }
+                accessor = entry.PropertyAccessor;
+                return accessor?.GetProperty(schemaName) as string ?? "";
             }
-            catch { }
-
-            try
+            catch
             {
-                var distributionList = entry.GetExchangeDistributionList();
-                if (distributionList != null)
-                {
-                    var smtp = distributionList.PrimarySmtpAddress ?? "";
-                    Release(distributionList);
-                    if (!string.IsNullOrWhiteSpace(smtp)) return smtp;
-                }
+                return "";
             }
-            catch { }
-
-            return ReadString(() => entry.Address);
+            finally
+            {
+                Release(accessor);
+            }
         }
 
         private static void Release(object obj)
