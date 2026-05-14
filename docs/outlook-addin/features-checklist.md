@@ -43,7 +43,9 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 | Master categories | `fetch_categories`、`upsert_category` | `PushCategories` |
 | Rules snapshot / mutation | `fetch_rules`、`manage_rule` | `PushRules` |
 | 月曆 | `fetch_calendar` | `PushCalendar` |
-| 通訊錄 | `fetch_address_book` | `PushAddressBookBatch` |
+| 通訊錄第一層來源 | `fetch_address_book_roots` | `PushAddressBookRoots` |
+| 通訊錄來源 entries | `fetch_address_list_entries` | `PushAddressBookListEntriesPage` |
+| 通訊錄 snapshot 相容路徑 | `fetch_address_book` | `PushAddressBookBatch` |
 | 通訊錄 group members | `fetch_address_book_group_members` | `PushAddressBookGroupMembersBatch` |
 | Chat | `SendChatMessage` SignalR server method | `ReportCommandResult` 不適用；method invoke 成功即可 |
 | Folder 建立 / 刪除 | `create_folder`、`delete_folder` | folder 增量同步，必要時 `PushMails`；`delete_folder` 是 move to Outlook default Deleted Items folder |
@@ -278,10 +280,10 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 
 ### 10. Address Book 通訊錄
 
-- [ ] AddIn 收到 `fetch_address_book`。
-- [ ] 讀取 Outlook default Contacts folder 的 `ContactItem` metadata。
-- [ ] 在設定允許時讀取 `Application.Session.AddressLists` 中可用的 Outlook address list / GAL metadata。
-- [ ] 尊重 `addressBookRequest.maxContacts`、`maxAddressEntriesPerList`、`maxGroupMembers` 與 `maxGroupDepth`，不得無限制枚舉大型 GAL 或無限制展開 nested group。
+- [ ] AddIn 收到 `fetch_address_book_roots` 時，只列出 Outlook default Contacts folder 與 `Application.Session.AddressLists` 中可用的第一層來源，不枚舉 AddressList entries。
+- [ ] AddIn 收到 `fetch_address_list_entries` 時，只讀取 request 指定來源的一頁 entries，尊重 `offset` / `pageSize`，並回填 `hasMore`。
+- [ ] `fetch_address_list_entries` 不得在背景自動翻下一頁；下一頁必須由 Hub/Web UI 再送 command。
+- [ ] `fetch_address_book` 只作為相容 snapshot 路徑；若仍使用，必須尊重 `addressBookRequest.maxContacts`、`maxAddressEntriesPerList`、`maxGroupMembers` 與 `maxGroupDepth`，不得無限制枚舉大型 GAL 或無限制展開 nested group。
 - [ ] `maxGroupMembers=0` 時不得展開 group members，只回 group metadata。
 - [ ] Distribution list / group 要回填 `isGroup`、`memberCount`、有限的 `memberSmtpAddresses` 與 `memberGroupSmtpAddresses`；無法展開時仍回傳 group metadata。
 - [ ] `fetch_address_book` 必須是 read-only；不得呼叫 Outlook contact / address book 的 `Save()`、`Delete()`、`Move()`、`Items.Add()`、`Application.CreateItem()` 或任何會新增、刪除、修改通訊錄 entry 的 API。
