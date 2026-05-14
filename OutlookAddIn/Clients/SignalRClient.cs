@@ -201,6 +201,18 @@ namespace OutlookAddIn.Clients
             await _connection.InvokeAsync("PushAddressBookBatch", batch).ConfigureAwait(false);
         }
 
+        public async Task PushAddressBookRootsAsync(AddressBookRootsBatchDto batch)
+        {
+            if (!IsConnected) return;
+            await _connection.InvokeAsync("PushAddressBookRoots", batch).ConfigureAwait(false);
+        }
+
+        public async Task PushAddressBookListEntriesPageAsync(AddressBookListEntriesPageDto page)
+        {
+            if (!IsConnected) return;
+            await _connection.InvokeAsync("PushAddressBookListEntriesPage", page).ConfigureAwait(false);
+        }
+
         public async Task PushAddressBookGroupMembersBatchAsync(AddressBookGroupMembersBatchDto batch)
         {
             if (!IsConnected) return;

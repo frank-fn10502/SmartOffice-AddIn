@@ -338,6 +338,7 @@
     <Compile Include="Outlook\Calendar\CalendarReader.cs" />
     <Compile Include="Outlook\Categories\OutlookCategoryReader.cs" />
     <Compile Include="Outlook\Contacts\OutlookAddressBookReader.cs" />
+    <Compile Include="Outlook\Contacts\OutlookAddressBookListReader.cs" />
     <Compile Include="Outlook\Common\OutlookDateFilter.cs" />
     <Compile Include="Outlook\Common\OutlookRecipientDtoBuilder.cs" />
     <Compile Include="Outlook\Folders\FolderDiscovery.cs" />

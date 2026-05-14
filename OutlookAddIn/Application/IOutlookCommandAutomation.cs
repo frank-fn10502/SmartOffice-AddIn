@@ -21,7 +21,10 @@ namespace OutlookAddIn.Application
         List<CalendarEventDto> UpdateCalendarEvent(CalendarEventCommandRequest request);
         List<CalendarEventDto> DeleteCalendarEvent(CalendarEventCommandRequest request);
         Task<List<AddressBookContactDto>> ReadAddressBookAsync(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null);
+        List<AddressBookRootDto> ReadAddressBookRoots();
+        Task<AddressBookListEntriesPageDto> ReadAddressListEntriesAsync(AddressBookListEntriesRequest request, string requestId);
         Task<List<AddressBookContactDto>> ReadAddressBookGroupMembersAsync(AddressBookGroupMembersRequest request);
+        Task<AddressBookRelationLookupResponse> ReadAddressBookRelationLookupAsync(AddressBookRelationLookupRequest request);
 
         Task HandleFetchFolderRootsAsync(OutlookCommand command);
         Task HandleFetchFolderChildrenAsync(OutlookCommand command);

@@ -8,7 +8,7 @@ using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace OutlookAddIn.OutlookServices.Contacts
 {
-    internal sealed class OutlookAddressBookReader
+    internal sealed partial class OutlookAddressBookReader
     {
         private readonly Outlook.Application _application;
         private const int UiYieldInterval = 10;
@@ -23,8 +23,8 @@ namespace OutlookAddIn.OutlookServices.Contacts
         public async Task<List<AddressBookContactDto>> ReadAddressBookAsync(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null)
         {
             request = request ?? new AddressBookSyncRequest();
-            var maxContacts = LimitOrUnbounded(request.MaxContacts, 5000);
-            var maxAddressEntriesPerList = LimitOrUnbounded(request.MaxAddressEntriesPerList, 2000);
+            var maxContacts = ClampOrDefault(request.MaxContacts, 5000);
+            var maxAddressEntriesPerList = ClampOrDefault(request.MaxAddressEntriesPerList, 2000);
             var maxGroupMembers = request.MaxGroupMembers < 0 ? 0 : Math.Min(request.MaxGroupMembers, 500);
             var maxGroupDepth = request.MaxGroupDepth < 0 ? 1 : Math.Min(request.MaxGroupDepth, 3);
             var groupMemberReadBudget = new IntBudget(Math.Min(maxContacts, 1000));
@@ -50,7 +50,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
         public async Task<List<AddressBookContactDto>> ReadAddressBookGroupMembersAsync(AddressBookGroupMembersRequest request)
         {
             request = request ?? new AddressBookGroupMembersRequest();
-            var maxMembers = LimitOrUnbounded(request.MaxMembers, 5000);
+            var maxMembers = ClampOrDefault(request.MaxMembers, 5000);
             Outlook.ExchangeDistributionList distributionList = null;
             Outlook.AddressEntries members = null;
             var result = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
@@ -95,6 +95,57 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 .OrderBy(item => item.DisplayName)
                 .ThenBy(item => item.SmtpAddress)
                 .ToList();
+        }
+
+        public async Task<AddressBookRelationLookupResponse> ReadAddressBookRelationLookupAsync(AddressBookRelationLookupRequest request)
+        {
+            request = request ?? new AddressBookRelationLookupRequest();
+            request.Take = request.Take <= 0 ? 50 : Math.Min(request.Take, 500);
+            var response = new AddressBookRelationLookupResponse
+            {
+                Query = RelationQuery(request),
+                TargetKind = request.TargetKind ?? string.Empty,
+                State = "not_found",
+            };
+
+            Outlook.AddressEntry entry = null;
+            try
+            {
+                entry = ResolveRelationAddressEntry(request);
+                if (entry == null)
+                {
+                    response.Matches = await FindRelationMatchesAsync(request);
+                    response.State = response.Matches.Count > 1 ? "ambiguous" : "not_found";
+                    if (response.Matches.Count == 1)
+                    {
+                        response.Target = response.Matches[0];
+                        response.State = "found";
+                    }
+                    return response;
+                }
+
+                response.Target = await AddressEntryToContactAsync(entry, "relation_lookup");
+                if (response.Target == null) return response;
+
+                response.State = "found";
+                response.IsGroup = response.Target.IsGroup;
+                if (response.Target.IsGroup)
+                    await FillGroupRelationAsync(response, entry, request.Take);
+                else
+                    await FillUserRelationAsync(response, entry, request.Take);
+
+                return response;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("ReadAddressBookRelationLookup error: " + ex);
+                response.Message = ex.Message;
+                return response;
+            }
+            finally
+            {
+                Release(entry);
+            }
         }
 
         private async Task ReadDefaultContactsFolderAsync(
@@ -319,7 +370,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 Upsert(contacts, dto);
         }
 
-        private async Task<AddressBookContactDto> AddressEntryToContactAsync(Outlook.AddressEntry entry)
+        private async Task<AddressBookContactDto> AddressEntryToContactAsync(Outlook.AddressEntry entry, string source = "group_member")
         {
             if (entry == null) return null;
             var userType = ReadAddressEntryUserType(entry);
@@ -332,7 +383,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 RawAddress = string.IsNullOrWhiteSpace(smtp) ? ReadString(() => entry.Address) : smtp,
                 AddressType = ReadString(() => entry.Type),
                 EntryUserType = ReadString(() => entry.AddressEntryUserType.ToString()),
-                Source = "group_member",
+                Source = source,
                 IsGroup = IsDistributionListEntry(userType),
             };
 
@@ -372,6 +423,205 @@ namespace OutlookAddIn.OutlookServices.Contacts
 
             await Task.CompletedTask;
             return string.IsNullOrWhiteSpace(dto.SmtpAddress) && string.IsNullOrWhiteSpace(dto.DisplayName) ? null : dto;
+        }
+
+        private Outlook.AddressEntry ResolveRelationAddressEntry(AddressBookRelationLookupRequest request)
+        {
+            var query = RelationQuery(request);
+            if (string.IsNullOrWhiteSpace(query)) return null;
+
+            Outlook.Recipient recipient = null;
+            try
+            {
+                recipient = _application.Session.CreateRecipient(query);
+                if (recipient == null) return null;
+                if (!recipient.Resolve() || !recipient.Resolved) return null;
+                return recipient.AddressEntry;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                Release(recipient);
+            }
+        }
+
+        private async Task FillGroupRelationAsync(AddressBookRelationLookupResponse response, Outlook.AddressEntry groupEntry, int take)
+        {
+            Outlook.ExchangeDistributionList distributionList = null;
+            try
+            {
+                distributionList = groupEntry.GetExchangeDistributionList();
+                if (distributionList == null) return;
+
+                response.Members = await ReadDistributionListDirectMembersAsync(distributionList, take);
+                response.MemberGroups = response.Members
+                    .Where(member => member.IsGroup)
+                    .ToList();
+                response.Target.MemberCount = Math.Max(response.Target.MemberCount, ReadMemberCount(distributionList));
+                response.Target.MemberSmtpAddresses = response.Members
+                    .Select(member => member.SmtpAddress)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(500)
+                    .ToList();
+                response.Target.MemberGroupSmtpAddresses = response.MemberGroups
+                    .Select(member => member.SmtpAddress)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(500)
+                    .ToList();
+            }
+            catch { }
+            finally
+            {
+                Release(distributionList);
+            }
+        }
+
+        private async Task FillUserRelationAsync(AddressBookRelationLookupResponse response, Outlook.AddressEntry userEntry, int take)
+        {
+            Outlook.ExchangeUser exchangeUser = null;
+            Outlook.AddressEntries groups = null;
+            try
+            {
+                exchangeUser = userEntry.GetExchangeUser();
+                groups = exchangeUser?.GetMemberOfList();
+                if (groups == null) return;
+
+                var limit = Math.Min(groups.Count, Math.Max(1, Math.Min(500, take)));
+                for (var i = 1; i <= limit; i++)
+                {
+                    Outlook.AddressEntry groupEntry = null;
+                    try
+                    {
+                        groupEntry = groups[i];
+                        var group = await AddressEntryToContactAsync(groupEntry, "member_of_group");
+                        if (group != null) response.MemberOfGroups.Add(group);
+                    }
+                    catch { }
+                    finally
+                    {
+                        Release(groupEntry);
+                    }
+                    await YieldOutlookUiIfNeeded(i);
+                }
+
+                response.Target.MemberOfGroupSmtpAddresses = response.MemberOfGroups
+                    .Select(group => group.SmtpAddress)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(500)
+                    .ToList();
+                response.ContainingGroups = response.MemberOfGroups.ToList();
+            }
+            catch { }
+            finally
+            {
+                Release(groups);
+                Release(exchangeUser);
+            }
+        }
+
+        private async Task<List<AddressBookContactDto>> ReadDistributionListDirectMembersAsync(Outlook.ExchangeDistributionList distributionList, int take)
+        {
+            var members = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
+            Outlook.AddressEntries entries = null;
+            try
+            {
+                entries = distributionList.GetExchangeDistributionListMembers();
+                if (entries == null) return new List<AddressBookContactDto>();
+                var limit = Math.Min(entries.Count, Math.Max(1, Math.Min(500, take)));
+                for (var i = 1; i <= limit; i++)
+                {
+                    Outlook.AddressEntry memberEntry = null;
+                    try
+                    {
+                        memberEntry = entries[i];
+                        var member = await AddressEntryToContactAsync(memberEntry, "group_member");
+                        if (member != null) Upsert(members, member);
+                    }
+                    catch { }
+                    finally
+                    {
+                        Release(memberEntry);
+                    }
+                    await YieldOutlookUiIfNeeded(i);
+                }
+            }
+            finally
+            {
+                Release(entries);
+            }
+
+            return members.Values
+                .OrderBy(member => member.DisplayName)
+                .ThenBy(member => member.SmtpAddress)
+                .ToList();
+        }
+
+        private async Task<List<AddressBookContactDto>> FindRelationMatchesAsync(AddressBookRelationLookupRequest request)
+        {
+            var query = Normalize(RelationQuery(request));
+            if (string.IsNullOrWhiteSpace(query)) return new List<AddressBookContactDto>();
+
+            var matches = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
+            Outlook.AddressLists lists = null;
+            try
+            {
+                lists = _application.Session.AddressLists;
+                if (lists == null) return new List<AddressBookContactDto>();
+                var limit = Math.Max(1, Math.Min(25, request.Take <= 0 ? 10 : request.Take));
+                var inspected = 0;
+                for (var listIndex = 1; listIndex <= lists.Count && matches.Count < limit && inspected < 1000; listIndex++)
+                {
+                    Outlook.AddressList list = null;
+                    Outlook.AddressEntries entries = null;
+                    try
+                    {
+                        list = lists[listIndex];
+                        if (!IsSupportedAddressList(list)) continue;
+                        entries = list.AddressEntries;
+                        if (entries == null) continue;
+                        var entryLimit = Math.Min(entries.Count, 250);
+                        for (var entryIndex = 1; entryIndex <= entryLimit && matches.Count < limit && inspected < 1000; entryIndex++)
+                        {
+                            inspected++;
+                            Outlook.AddressEntry entry = null;
+                            try
+                            {
+                                entry = entries[entryIndex];
+                                if (!AddressEntryMatchesRelation(entry, query, request)) continue;
+                                var dto = await AddressEntryToContactAsync(entry, AddressListSource(list));
+                                if (dto != null) Upsert(matches, dto);
+                            }
+                            catch { }
+                            finally
+                            {
+                                Release(entry);
+                            }
+                            await YieldOutlookUiIfNeeded(entryIndex);
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        Release(entries);
+                        Release(list);
+                    }
+                }
+            }
+            finally
+            {
+                Release(lists);
+            }
+
+            return matches.Values
+                .OrderBy(match => match.DisplayName)
+                .ThenBy(match => match.SmtpAddress)
+                .ToList();
         }
 
         private Outlook.ExchangeDistributionList FindExchangeDistributionList(AddressBookGroupMembersRequest request)
@@ -523,6 +773,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
             dto.RelationKinds = new List<string> { "address_book" };
             dto.MemberSmtpAddresses = dto.MemberSmtpAddresses.Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
             dto.MemberGroupSmtpAddresses = dto.MemberGroupSmtpAddresses.Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
+            dto.MemberOfGroupSmtpAddresses = dto.MemberOfGroupSmtpAddresses.Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
 
             AddressBookContactDto current;
             if (!contacts.TryGetValue(key, out current))
@@ -546,6 +797,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
             current.MemberCount = Math.Max(current.MemberCount, dto.MemberCount);
             current.MemberSmtpAddresses = current.MemberSmtpAddresses.Concat(dto.MemberSmtpAddresses).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
             current.MemberGroupSmtpAddresses = current.MemberGroupSmtpAddresses.Concat(dto.MemberGroupSmtpAddresses).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
+            current.MemberOfGroupSmtpAddresses = current.MemberOfGroupSmtpAddresses.Concat(dto.MemberOfGroupSmtpAddresses).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
             if (!current.Sources.Contains(dto.Source)) current.Sources.Add(dto.Source);
         }
 
@@ -597,6 +849,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 LastSeen = contact.LastSeen,
                 RelationScore = contact.RelationScore,
                 IsLikelySelf = contact.IsLikelySelf,
+                IsRelatedToSelf = contact.IsRelatedToSelf,
                 IsKnown = contact.IsKnown,
                 IsGroup = contact.IsGroup,
                 MemberCount = contact.MemberCount,
@@ -642,9 +895,9 @@ namespace OutlookAddIn.OutlookServices.Contacts
             }
         }
 
-        private static int LimitOrUnbounded(int value, int max)
+        private static int ClampOrDefault(int value, int max)
         {
-            return value <= 0 ? int.MaxValue : Math.Min(value, max);
+            return value <= 0 ? max : Math.Min(value, max);
         }
 
         private static string ReadString(Func<string> read)
@@ -710,6 +963,38 @@ namespace OutlookAddIn.OutlookServices.Contacts
                 return true;
 
             return string.Equals(Normalize(ReadString(() => entry.Address)), requestedSmtp, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool AddressEntryMatchesRelation(Outlook.AddressEntry entry, string query, AddressBookRelationLookupRequest request)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(query)) return false;
+            var groupOnly = string.Equals(request.TargetKind, "group", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrWhiteSpace(request.GroupSmtpAddress)
+                || !string.IsNullOrWhiteSpace(request.GroupId);
+            if (groupOnly && !IsDistributionListEntry(ReadAddressEntryUserType(entry))) return false;
+
+            var id = Normalize(ReadString(() => entry.ID));
+            var name = Normalize(ReadString(() => entry.Name));
+            var address = Normalize(ReadString(() => entry.Address));
+            var smtp = Normalize(SmtpFromAddressEntryProperties(entry));
+            return id == query
+                || smtp == query
+                || address == query
+                || name == query
+                || (!LooksLikeSmtpAddress(query) && name.Contains(query));
+        }
+
+        private static string RelationQuery(AddressBookRelationLookupRequest request)
+        {
+            return Prefer(
+                Prefer(
+                    Prefer(
+                        Prefer(
+                            Prefer(request.GroupSmtpAddress, request.SmtpAddress),
+                            request.Email),
+                        request.Id),
+                    request.GroupId),
+                Prefer(request.Query, request.DisplayName));
         }
 
         private static int ReadMemberCount(Outlook.ExchangeDistributionList distributionList)

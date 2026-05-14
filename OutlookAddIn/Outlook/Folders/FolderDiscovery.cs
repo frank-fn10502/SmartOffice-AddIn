@@ -235,6 +235,7 @@ namespace OutlookAddIn
 
             try
             {
+                var accountSmtpByStoreId = BuildAccountSmtpByStoreId(session);
                 foreach (Outlook.Store store in outlookStores)
                 {
                     Outlook.MAPIFolder root = null;
@@ -246,6 +247,10 @@ namespace OutlookAddIn
 
                         string storeId = "";
                         try { storeId = store.StoreID ?? ""; } catch { }
+
+                        string accountSmtpAddress = "";
+                        if (!string.IsNullOrEmpty(storeId))
+                            accountSmtpByStoreId.TryGetValue(storeId, out accountSmtpAddress);
 
                         string storeFilePath = "";
                         try { storeFilePath = store.FilePath ?? ""; } catch { }
@@ -274,7 +279,8 @@ namespace OutlookAddIn
                             DisplayName = displayName,
                             StoreKind = storeKind,
                             StoreFilePath = storeFilePath,
-                            RootFolderPath = rootPath
+                            RootFolderPath = rootPath,
+                            AccountSmtpAddress = accountSmtpAddress ?? ""
                         });
 
                         rootFolders.Add(new FolderDto
@@ -311,6 +317,49 @@ namespace OutlookAddIn
             {
                 try { Marshal.ReleaseComObject(outlookStores); } catch { }
             }
+        }
+
+        private static Dictionary<string, string> BuildAccountSmtpByStoreId(Outlook.NameSpace session)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Outlook.Accounts accounts = null;
+            try
+            {
+                accounts = session.Accounts;
+                if (accounts == null) return map;
+
+                foreach (Outlook.Account account in accounts)
+                {
+                    Outlook.Store deliveryStore = null;
+                    try
+                    {
+                        var smtp = "";
+                        try { smtp = account.SmtpAddress ?? ""; } catch { }
+                        if (string.IsNullOrEmpty(smtp)) continue;
+
+                        deliveryStore = account.DeliveryStore;
+                        if (deliveryStore == null) continue;
+
+                        var storeId = "";
+                        try { storeId = deliveryStore.StoreID ?? ""; } catch { }
+                        if (!string.IsNullOrEmpty(storeId) && !map.ContainsKey(storeId))
+                            map[storeId] = smtp;
+                    }
+                    catch { }
+                    finally
+                    {
+                        if (deliveryStore != null) try { Marshal.ReleaseComObject(deliveryStore); } catch { }
+                        try { Marshal.ReleaseComObject(account); } catch { }
+                    }
+                }
+            }
+            catch { }
+            finally
+            {
+                if (accounts != null) try { Marshal.ReleaseComObject(accounts); } catch { }
+            }
+
+            return map;
         }
 
         // ---------------------------------------------------------------------

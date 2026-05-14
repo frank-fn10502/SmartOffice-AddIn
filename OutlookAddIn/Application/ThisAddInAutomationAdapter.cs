@@ -85,8 +85,17 @@ namespace OutlookAddIn.Application
         public Task<List<AddressBookContactDto>> ReadAddressBookAsync(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null) =>
             _addressBookReader.ReadAddressBookAsync(request, publishSnapshot);
 
+        public List<AddressBookRootDto> ReadAddressBookRoots() =>
+            _addressBookReader.ReadAddressBookRoots();
+
+        public Task<AddressBookListEntriesPageDto> ReadAddressListEntriesAsync(AddressBookListEntriesRequest request, string requestId) =>
+            _addressBookReader.ReadAddressListEntriesAsync(request, requestId);
+
         public Task<List<AddressBookContactDto>> ReadAddressBookGroupMembersAsync(AddressBookGroupMembersRequest request) =>
             _addressBookReader.ReadAddressBookGroupMembersAsync(request);
+
+        public Task<AddressBookRelationLookupResponse> ReadAddressBookRelationLookupAsync(AddressBookRelationLookupRequest request) =>
+            _addressBookReader.ReadAddressBookRelationLookupAsync(request);
 
         public Task HandleFetchFolderRootsAsync(OutlookCommand command) =>
             _addin.HandleFetchFolderRootsAsync(command);

@@ -128,8 +128,17 @@ namespace OutlookAddIn.Application
                 case "fetch_address_book":
                     await HandleFetchAddressBookAsync(cmd).ConfigureAwait(false);
                     break;
+                case "fetch_address_book_roots":
+                    await HandleFetchAddressBookRootsAsync(cmd).ConfigureAwait(false);
+                    break;
+                case "fetch_address_list_entries":
+                    await HandleFetchAddressListEntriesAsync(cmd).ConfigureAwait(false);
+                    break;
                 case "fetch_address_book_group_members":
                     await HandleFetchAddressBookGroupMembersAsync(cmd).ConfigureAwait(false);
+                    break;
+                case "address_book_relation_lookup":
+                    await HandleAddressBookRelationLookupAsync(cmd).ConfigureAwait(false);
                     break;
                 case "update_mail_properties":
                     await _outlookThread.InvokeLegacyAsyncCommand(() => _automation.HandleUpdateMailPropertiesAsync(cmd)).ConfigureAwait(false);
@@ -362,8 +371,8 @@ namespace OutlookAddIn.Application
             {
                 IncludeOutlookContacts = cmd.AddressBookRequest == null || cmd.AddressBookRequest.IncludeOutlookContacts,
                 IncludeAddressLists = cmd.AddressBookRequest == null || cmd.AddressBookRequest.IncludeAddressLists,
-                MaxContacts = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxContacts > 0 ? cmd.AddressBookRequest.MaxContacts : 0,
-                MaxAddressEntriesPerList = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxAddressEntriesPerList > 0 ? cmd.AddressBookRequest.MaxAddressEntriesPerList : 0,
+                MaxContacts = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxContacts > 0 ? cmd.AddressBookRequest.MaxContacts : 5000,
+                MaxAddressEntriesPerList = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxAddressEntriesPerList > 0 ? cmd.AddressBookRequest.MaxAddressEntriesPerList : 2000,
                 MaxGroupMembers = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxGroupMembers >= 0 ? cmd.AddressBookRequest.MaxGroupMembers : 0,
                 MaxGroupDepth = cmd.AddressBookRequest != null && cmd.AddressBookRequest.MaxGroupDepth >= 0 ? cmd.AddressBookRequest.MaxGroupDepth : 1
             };
@@ -446,7 +455,7 @@ namespace OutlookAddIn.Application
                 GroupSmtpAddress = cmd.AddressBookGroupMembersRequest?.GroupSmtpAddress ?? string.Empty,
                 MaxMembers = cmd.AddressBookGroupMembersRequest != null && cmd.AddressBookGroupMembersRequest.MaxMembers > 0
                     ? cmd.AddressBookGroupMembersRequest.MaxMembers
-                    : 0,
+                    : 5000,
                 ForceRefresh = cmd.AddressBookGroupMembersRequest?.ForceRefresh ?? false,
             };
             await _signalRClient.ReportLogAsync("info", "fetch_address_book_group_members: starting").ConfigureAwait(false);
@@ -470,6 +479,115 @@ namespace OutlookAddIn.Application
             };
             await _signalRClient.PushAddressBookGroupMembersBatchAsync(batch).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_address_book_group_members completed. Items: " + batch.Members.Count).ConfigureAwait(false);
+        }
+
+        private async Task HandleAddressBookRelationLookupAsync(OutlookCommand cmd)
+        {
+            var request = new AddressBookRelationLookupRequest
+            {
+                Query = cmd.AddressBookRelationLookupRequest?.Query ?? string.Empty,
+                TargetKind = cmd.AddressBookRelationLookupRequest?.TargetKind ?? string.Empty,
+                Id = cmd.AddressBookRelationLookupRequest?.Id ?? string.Empty,
+                DisplayName = cmd.AddressBookRelationLookupRequest?.DisplayName ?? string.Empty,
+                SmtpAddress = cmd.AddressBookRelationLookupRequest?.SmtpAddress ?? string.Empty,
+                Email = cmd.AddressBookRelationLookupRequest?.Email ?? string.Empty,
+                GroupId = cmd.AddressBookRelationLookupRequest?.GroupId ?? string.Empty,
+                GroupSmtpAddress = cmd.AddressBookRelationLookupRequest?.GroupSmtpAddress ?? string.Empty,
+                Take = Math.Max(1, Math.Min(500, cmd.AddressBookRelationLookupRequest?.Take ?? 50)),
+            };
+            await _signalRClient.ReportLogAsync("info", "address_book_relation_lookup: starting").ConfigureAwait(false);
+
+            AddressBookRelationLookupResponse response = null;
+            await _outlookThread.InvokeLegacyAsyncCommand(async () =>
+            {
+                response = await _automation.ReadAddressBookRelationLookupAsync(request).ConfigureAwait(true);
+            }).ConfigureAwait(false);
+
+            response = response ?? new AddressBookRelationLookupResponse { State = "not_found", Query = request.Query, TargetKind = request.TargetKind };
+            var contacts = RelationContacts(response);
+            if (contacts.Count > 0)
+            {
+                await _signalRClient.PushAddressBookBatchAsync(new AddressBookBatchDto
+                {
+                    BatchId = Guid.NewGuid().ToString("N"),
+                    Sequence = 1,
+                    Reset = false,
+                    IsFinal = true,
+                    TotalCount = contacts.Count,
+                    Contacts = contacts,
+                }).ConfigureAwait(false);
+            }
+
+            if (response.Target != null && response.Target.IsGroup)
+            {
+                await _signalRClient.PushAddressBookGroupMembersBatchAsync(new AddressBookGroupMembersBatchDto
+                {
+                    GroupId = response.Target.Id,
+                    GroupSmtpAddress = response.Target.SmtpAddress,
+                    BatchId = Guid.NewGuid().ToString("N"),
+                    Sequence = 1,
+                    Reset = true,
+                    IsFinal = true,
+                    TotalCount = response.Members.Count,
+                    Members = response.Members,
+                }).ConfigureAwait(false);
+            }
+
+            await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "address_book_relation_lookup completed. State: " + response.State).ConfigureAwait(false);
+        }
+
+        private static List<AddressBookContactDto> RelationContacts(AddressBookRelationLookupResponse response)
+        {
+            var contacts = new List<AddressBookContactDto>();
+            if (response.Target != null) contacts.Add(response.Target);
+            contacts.AddRange(response.Matches ?? new List<AddressBookContactDto>());
+            contacts.AddRange(response.Members ?? new List<AddressBookContactDto>());
+            contacts.AddRange(response.MemberGroups ?? new List<AddressBookContactDto>());
+            contacts.AddRange(response.MemberOfGroups ?? new List<AddressBookContactDto>());
+            contacts.AddRange(response.ContainingGroups ?? new List<AddressBookContactDto>());
+            return contacts
+                .Where(contact => contact != null)
+                .GroupBy(contact => !string.IsNullOrWhiteSpace(contact.SmtpAddress) ? contact.SmtpAddress : contact.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+        }
+
+        private async Task HandleFetchAddressBookRootsAsync(OutlookCommand cmd)
+        {
+            await _signalRClient.ReportLogAsync("info", "fetch_address_book_roots: starting").ConfigureAwait(false);
+            List<AddressBookRootDto> roots = null;
+            await _outlookThread.InvokeLegacyAsyncCommand(() =>
+            {
+                roots = _automation.ReadAddressBookRoots();
+                return Task.CompletedTask;
+            }).ConfigureAwait(false);
+
+            await _signalRClient.PushAddressBookRootsAsync(new AddressBookRootsBatchDto
+            {
+                RequestId = cmd.Id,
+                Roots = roots ?? new List<AddressBookRootDto>(),
+            }).ConfigureAwait(false);
+            await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_address_book_roots completed. Items: " + (roots?.Count ?? 0)).ConfigureAwait(false);
+        }
+
+        private async Task HandleFetchAddressListEntriesAsync(OutlookCommand cmd)
+        {
+            var request = new AddressBookListEntriesRequest
+            {
+                AddressListId = cmd.AddressBookListEntriesRequest?.AddressListId ?? string.Empty,
+                AddressListName = cmd.AddressBookListEntriesRequest?.AddressListName ?? string.Empty,
+                Offset = Math.Max(0, cmd.AddressBookListEntriesRequest?.Offset ?? 0),
+                PageSize = Math.Max(1, Math.Min(500, cmd.AddressBookListEntriesRequest?.PageSize ?? 100)),
+            };
+            await _signalRClient.ReportLogAsync("info", "fetch_address_list_entries: starting").ConfigureAwait(false);
+            AddressBookListEntriesPageDto page = null;
+            await _outlookThread.InvokeLegacyAsyncCommand(async () =>
+            {
+                page = await _automation.ReadAddressListEntriesAsync(request, cmd.Id).ConfigureAwait(true);
+            }).ConfigureAwait(false);
+
+            await _signalRClient.PushAddressBookListEntriesPageAsync(page ?? new AddressBookListEntriesPageDto { RequestId = cmd.Id }).ConfigureAwait(false);
+            await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_address_list_entries completed. Items: " + (page?.Contacts.Count ?? 0)).ConfigureAwait(false);
         }
 
         private async Task PushAddressBookBatchesAsync(List<AddressBookBatchDto> batches, bool throwOnError)
