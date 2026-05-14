@@ -12,6 +12,7 @@ namespace OutlookAddIn.Application
     internal sealed class OutlookCommandDispatcher
     {
         private const int FetchMailsMaxCount = 100;
+        private const int AddressBookBatchSize = 25;
 
         private readonly SignalRClient _signalRClient;
         private readonly OutlookThreadInvoker _outlookThread;
@@ -365,27 +366,107 @@ namespace OutlookAddIn.Application
             };
 
             await _signalRClient.ReportLogAsync("info", "fetch_address_book: starting").ConfigureAwait(false);
-            var lastPushedCount = 0;
-            var pendingPartialPushes = new List<Task>();
+            var batchId = Guid.NewGuid().ToString("N");
+            var sequence = 1;
+            var sentPartialKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var partialReset = true;
+            var pushChain = Task.CompletedTask;
             Action<List<AddressBookContactDto>> publishSnapshot = snapshot =>
             {
                 var safeSnapshot = snapshot ?? new List<AddressBookContactDto>();
-                if (safeSnapshot.Count <= lastPushedCount) return;
-                lastPushedCount = safeSnapshot.Count;
-                pendingPartialPushes.Add(Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _signalRClient.PushAddressBookAsync(safeSnapshot).ConfigureAwait(false);
-                        await _signalRClient.ReportLogAsync("info", "fetch_address_book: partial items: " + safeSnapshot.Count).ConfigureAwait(false);
-                    }
-                    catch { }
-                }));
+                var newContacts = NewAddressBookContacts(safeSnapshot, sentPartialKeys);
+                if (newContacts.Count == 0) return;
+                var batches = BuildAddressBookBatches(newContacts, batchId, ref sequence, partialReset, false, safeSnapshot.Count);
+                partialReset = false;
+                pushChain = pushChain.ContinueWith(_ => PushAddressBookBatchesAsync(batches, false), TaskScheduler.Default).Unwrap();
             };
             var contacts = await _outlookThread.InvokeAsync(() => _automation.ReadAddressBook(request, publishSnapshot)).ConfigureAwait(false);
-            await Task.WhenAll(pendingPartialPushes).ConfigureAwait(false);
-            await _signalRClient.PushAddressBookAsync(contacts ?? new List<AddressBookContactDto>()).ConfigureAwait(false);
+            await pushChain.ConfigureAwait(false);
+            await PushFinalAddressBookSnapshotAsync(contacts ?? new List<AddressBookContactDto>()).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_address_book completed. Items: " + (contacts?.Count ?? 0)).ConfigureAwait(false);
+        }
+
+        private async Task PushFinalAddressBookSnapshotAsync(List<AddressBookContactDto> contacts)
+        {
+            var batchId = Guid.NewGuid().ToString("N");
+            var sequence = 1;
+            var batches = BuildAddressBookBatches(contacts, batchId, ref sequence, true, true, contacts.Count);
+            if (batches.Count == 0)
+            {
+                batches.Add(new AddressBookBatchDto
+                {
+                    BatchId = batchId,
+                    Sequence = sequence,
+                    Reset = true,
+                    IsFinal = true,
+                    TotalCount = 0,
+                    Contacts = new List<AddressBookContactDto>()
+                });
+            }
+            await PushAddressBookBatchesAsync(batches, true).ConfigureAwait(false);
+        }
+
+        private async Task PushAddressBookBatchesAsync(List<AddressBookBatchDto> batches, bool throwOnError)
+        {
+            foreach (var batch in batches)
+            {
+                try
+                {
+                    await _signalRClient.PushAddressBookBatchAsync(batch).ConfigureAwait(false);
+                    await _signalRClient.ReportLogAsync(
+                        "info",
+                        "fetch_address_book: batch " + batch.Sequence + " items: " + batch.Contacts.Count + "/" + batch.TotalCount).ConfigureAwait(false);
+                }
+                catch
+                {
+                    if (throwOnError) throw;
+                }
+            }
+        }
+
+        private static List<AddressBookBatchDto> BuildAddressBookBatches(
+            List<AddressBookContactDto> contacts,
+            string batchId,
+            ref int sequence,
+            bool resetFirst,
+            bool finalSnapshot,
+            int totalCount)
+        {
+            var batches = new List<AddressBookBatchDto>();
+            for (var offset = 0; offset < contacts.Count; offset += AddressBookBatchSize)
+            {
+                var take = Math.Min(AddressBookBatchSize, contacts.Count - offset);
+                batches.Add(new AddressBookBatchDto
+                {
+                    BatchId = batchId,
+                    Sequence = sequence++,
+                    Reset = resetFirst && offset == 0,
+                    IsFinal = finalSnapshot && offset + take >= contacts.Count,
+                    TotalCount = totalCount,
+                    Contacts = contacts.GetRange(offset, take)
+                });
+            }
+            return batches;
+        }
+
+        private static List<AddressBookContactDto> NewAddressBookContacts(List<AddressBookContactDto> snapshot, HashSet<string> sentKeys)
+        {
+            var contacts = new List<AddressBookContactDto>();
+            foreach (var contact in snapshot)
+            {
+                var key = AddressBookContactKey(contact);
+                if (string.IsNullOrWhiteSpace(key) || !sentKeys.Add(key)) continue;
+                contacts.Add(contact);
+            }
+            return contacts;
+        }
+
+        private static string AddressBookContactKey(AddressBookContactDto contact)
+        {
+            if (!string.IsNullOrWhiteSpace(contact.SmtpAddress)) return contact.SmtpAddress.Trim();
+            if (!string.IsNullOrWhiteSpace(contact.RawAddress)) return contact.RawAddress.Trim();
+            if (!string.IsNullOrWhiteSpace(contact.DisplayName)) return contact.DisplayName.Trim();
+            return contact.Id?.Trim() ?? string.Empty;
         }
     }
 }

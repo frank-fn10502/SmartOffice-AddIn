@@ -43,7 +43,7 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 | Master categories | `fetch_categories`、`upsert_category` | `PushCategories` |
 | Rules snapshot / mutation | `fetch_rules`、`manage_rule` | `PushRules` |
 | 月曆 | `fetch_calendar` | `PushCalendar` |
-| 通訊錄 | `fetch_address_book` | `PushAddressBook` |
+| 通訊錄 | `fetch_address_book` | `PushAddressBookBatch` |
 | Chat | `SendChatMessage` SignalR server method | `ReportCommandResult` 不適用；method invoke 成功即可 |
 | Folder 建立 / 刪除 | `create_folder`、`delete_folder` | folder 增量同步，必要時 `PushMails`；`delete_folder` 是 move to Outlook default Deleted Items folder |
 
@@ -284,7 +284,9 @@ AddIn 的角色必須保持單純：listen `OutlookCommand`、呼叫 Outlook obj
 - [ ] `maxGroupMembers=0` 時不得展開 group members，只回 group metadata。
 - [ ] Distribution list / group 要回填 `isGroup`、`memberCount`、有限的 `memberSmtpAddresses` 與 `memberGroupSmtpAddresses`；無法展開時仍回傳 group metadata。
 - [ ] `fetch_address_book` 必須是 read-only；不得呼叫 Outlook contact / address book 的 `Save()`、`Delete()`、`Move()`、`Items.Add()`、`Application.CreateItem()` 或任何會新增、刪除、修改通訊錄 entry 的 API。
-- [ ] 回推 `PushAddressBook(contacts)`；不得讀取 mail body。
+- [ ] 回推 `PushAddressBookBatch(batch)`；不得讀取 mail body。
+- [ ] 通訊錄 partial progress 只能回推新增的 contact batch，不得送出 50、100、150 這類累積 snapshot。
+- [ ] 完整 snapshot 也必須拆成固定大小 batch，第一個 batch 設 `reset=true`，最後一個 batch 設 `isFinal=true`。
 - [ ] 完成後回報 `ReportCommandResult`。
 
 驗收：

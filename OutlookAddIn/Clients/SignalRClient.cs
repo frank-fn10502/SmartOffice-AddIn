@@ -195,6 +195,12 @@ namespace OutlookAddIn.Clients
             await _connection.InvokeAsync("PushAddressBook", contacts).ConfigureAwait(false);
         }
 
+        public async Task PushAddressBookBatchAsync(AddressBookBatchDto batch)
+        {
+            if (!IsConnected) return;
+            await _connection.InvokeAsync("PushAddressBookBatch", batch).ConfigureAwait(false);
+        }
+
         public async Task SendChatMessageAsync(ChatMessageDto message)
         {
             if (!IsConnected) return;
