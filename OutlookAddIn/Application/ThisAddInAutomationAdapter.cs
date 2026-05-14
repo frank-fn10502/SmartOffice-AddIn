@@ -82,8 +82,8 @@ namespace OutlookAddIn.Application
         public List<CalendarEventDto> DeleteCalendarEvent(CalendarEventCommandRequest request) =>
             _calendarReader.DeleteCalendarEvent(request);
 
-        public List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request) =>
-            _addressBookReader.ReadAddressBook(request);
+        public List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null) =>
+            _addressBookReader.ReadAddressBook(request, publishSnapshot);
 
         public Task HandleFetchFolderRootsAsync(OutlookCommand command) =>
             _addin.HandleFetchFolderRootsAsync(command);

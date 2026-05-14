@@ -16,7 +16,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
             _application = application ?? throw new ArgumentNullException(nameof(application));
         }
 
-        public List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request)
+        public List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null)
         {
             request = request ?? new AddressBookSyncRequest();
             var maxContacts = Clamp(request.MaxContacts, 1, 5000, 1000);
@@ -25,21 +25,30 @@ namespace OutlookAddIn.OutlookServices.Contacts
             var maxGroupDepth = request.MaxGroupDepth < 0 ? 1 : Math.Min(request.MaxGroupDepth, 3);
             var groupMemberReadBudget = Math.Min(maxContacts, 1000);
             var contacts = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
+            var publishThreshold = 50;
+            var lastPublishedCount = 0;
 
             if (request.IncludeOutlookContacts)
-                ReadDefaultContactsFolder(contacts, maxContacts);
+                ReadDefaultContactsFolder(contacts, maxContacts, publishSnapshot, publishThreshold, ref lastPublishedCount);
 
             if (request.IncludeAddressLists && contacts.Count < maxContacts)
-                ReadAddressLists(contacts, maxContacts, maxAddressEntriesPerList, maxGroupMembers, maxGroupDepth, ref groupMemberReadBudget);
+                ReadAddressLists(contacts, maxContacts, maxAddressEntriesPerList, maxGroupMembers, maxGroupDepth, ref groupMemberReadBudget, publishSnapshot, publishThreshold, ref lastPublishedCount);
 
-            return contacts.Values
+            var result = contacts.Values
                 .OrderBy(item => item.DisplayName)
                 .ThenBy(item => item.SmtpAddress)
                 .Take(maxContacts)
                 .ToList();
+            publishSnapshot?.Invoke(CloneContacts(result));
+            return result;
         }
 
-        private void ReadDefaultContactsFolder(Dictionary<string, AddressBookContactDto> contacts, int maxContacts)
+        private void ReadDefaultContactsFolder(
+            Dictionary<string, AddressBookContactDto> contacts,
+            int maxContacts,
+            Action<List<AddressBookContactDto>> publishSnapshot,
+            int publishThreshold,
+            ref int lastPublishedCount)
         {
             Outlook.MAPIFolder folder = null;
             Outlook.Items items = null;
@@ -63,6 +72,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                         AddContactItem(contacts, contact, 1);
                         AddContactItem(contacts, contact, 2);
                         AddContactItem(contacts, contact, 3);
+                        PublishIfNeeded(contacts, publishSnapshot, publishThreshold, ref lastPublishedCount);
                     }
                     catch { }
                     finally
@@ -89,7 +99,10 @@ namespace OutlookAddIn.OutlookServices.Contacts
             int maxAddressEntriesPerList,
             int maxGroupMembers,
             int maxGroupDepth,
-            ref int groupMemberReadBudget)
+            ref int groupMemberReadBudget,
+            Action<List<AddressBookContactDto>> publishSnapshot,
+            int publishThreshold,
+            ref int lastPublishedCount)
         {
             Outlook.AddressLists lists = null;
 
@@ -118,6 +131,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                             {
                                 entry = entries[entryIndex];
                                 AddAddressEntry(contacts, entry, list, maxGroupMembers, maxGroupDepth, ref groupMemberReadBudget);
+                                PublishIfNeeded(contacts, publishSnapshot, publishThreshold, ref lastPublishedCount);
                             }
                             catch { }
                             finally
@@ -348,6 +362,63 @@ namespace OutlookAddIn.OutlookServices.Contacts
             current.MemberSmtpAddresses = current.MemberSmtpAddresses.Concat(dto.MemberSmtpAddresses).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
             current.MemberGroupSmtpAddresses = current.MemberGroupSmtpAddresses.Concat(dto.MemberGroupSmtpAddresses).Distinct(StringComparer.OrdinalIgnoreCase).Take(50).ToList();
             if (!current.Sources.Contains(dto.Source)) current.Sources.Add(dto.Source);
+        }
+
+        private static void PublishIfNeeded(
+            Dictionary<string, AddressBookContactDto> contacts,
+            Action<List<AddressBookContactDto>> publishSnapshot,
+            int publishThreshold,
+            ref int lastPublishedCount)
+        {
+            if (publishSnapshot == null) return;
+            if (contacts.Count - lastPublishedCount < publishThreshold) return;
+            lastPublishedCount = contacts.Count;
+            publishSnapshot(CloneContacts(contacts.Values));
+        }
+
+        private static List<AddressBookContactDto> CloneContacts(IEnumerable<AddressBookContactDto> contacts)
+        {
+            return contacts
+                .Select(CloneContact)
+                .OrderBy(item => item.DisplayName)
+                .ThenBy(item => item.SmtpAddress)
+                .ToList();
+        }
+
+        private static AddressBookContactDto CloneContact(AddressBookContactDto contact)
+        {
+            return new AddressBookContactDto
+            {
+                Id = contact.Id,
+                DisplayName = contact.DisplayName,
+                SmtpAddress = contact.SmtpAddress,
+                RawAddress = contact.RawAddress,
+                AddressType = contact.AddressType,
+                EntryUserType = contact.EntryUserType,
+                Source = contact.Source,
+                Sources = new List<string>(contact.Sources ?? new List<string>()),
+                CompanyName = contact.CompanyName,
+                JobTitle = contact.JobTitle,
+                Department = contact.Department,
+                OfficeLocation = contact.OfficeLocation,
+                BusinessTelephoneNumber = contact.BusinessTelephoneNumber,
+                MobileTelephoneNumber = contact.MobileTelephoneNumber,
+                Domain = contact.Domain,
+                RelationKinds = new List<string>(contact.RelationKinds ?? new List<string>()),
+                SampleSubjects = new List<string>(contact.SampleSubjects ?? new List<string>()),
+                MailCount = contact.MailCount,
+                CalendarCount = contact.CalendarCount,
+                FirstSeen = contact.FirstSeen,
+                LastSeen = contact.LastSeen,
+                RelationScore = contact.RelationScore,
+                IsLikelySelf = contact.IsLikelySelf,
+                IsKnown = contact.IsKnown,
+                IsGroup = contact.IsGroup,
+                MemberCount = contact.MemberCount,
+                MemberSmtpAddresses = new List<string>(contact.MemberSmtpAddresses ?? new List<string>()),
+                MemberGroupSmtpAddresses = new List<string>(contact.MemberGroupSmtpAddresses ?? new List<string>()),
+                MemberOfGroupSmtpAddresses = new List<string>(contact.MemberOfGroupSmtpAddresses ?? new List<string>()),
+            };
         }
 
         private static string ReadContactEmail(Outlook.ContactItem item, int emailSlot)

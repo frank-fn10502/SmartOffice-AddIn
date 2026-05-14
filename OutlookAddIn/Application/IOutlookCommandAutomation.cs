@@ -20,7 +20,7 @@ namespace OutlookAddIn.Application
         List<CalendarEventDto> CreateCalendarEvent(CalendarEventCommandRequest request);
         List<CalendarEventDto> UpdateCalendarEvent(CalendarEventCommandRequest request);
         List<CalendarEventDto> DeleteCalendarEvent(CalendarEventCommandRequest request);
-        List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request);
+        List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request, Action<List<AddressBookContactDto>> publishSnapshot = null);
 
         Task HandleFetchFolderRootsAsync(OutlookCommand command);
         Task HandleFetchFolderChildrenAsync(OutlookCommand command);

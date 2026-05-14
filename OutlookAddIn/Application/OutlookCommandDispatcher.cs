@@ -365,7 +365,25 @@ namespace OutlookAddIn.Application
             };
 
             await _signalRClient.ReportLogAsync("info", "fetch_address_book: starting").ConfigureAwait(false);
-            var contacts = await _outlookThread.InvokeAsync(() => _automation.ReadAddressBook(request)).ConfigureAwait(false);
+            var lastPushedCount = 0;
+            var pendingPartialPushes = new List<Task>();
+            Action<List<AddressBookContactDto>> publishSnapshot = snapshot =>
+            {
+                var safeSnapshot = snapshot ?? new List<AddressBookContactDto>();
+                if (safeSnapshot.Count <= lastPushedCount) return;
+                lastPushedCount = safeSnapshot.Count;
+                pendingPartialPushes.Add(Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _signalRClient.PushAddressBookAsync(safeSnapshot).ConfigureAwait(false);
+                        await _signalRClient.ReportLogAsync("info", "fetch_address_book: partial items: " + safeSnapshot.Count).ConfigureAwait(false);
+                    }
+                    catch { }
+                }));
+            };
+            var contacts = await _outlookThread.InvokeAsync(() => _automation.ReadAddressBook(request, publishSnapshot)).ConfigureAwait(false);
+            await Task.WhenAll(pendingPartialPushes).ConfigureAwait(false);
             await _signalRClient.PushAddressBookAsync(contacts ?? new List<AddressBookContactDto>()).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_address_book completed. Items: " + (contacts?.Count ?? 0)).ConfigureAwait(false);
         }
