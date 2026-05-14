@@ -16,6 +16,10 @@ namespace OutlookAddIn.Application
         List<OutlookRuleDto> ReadRules();
         List<OutlookCategoryDto> ReadCategories();
         List<CalendarEventDto> ReadCalendarEvents(DateTime start, DateTime end);
+        List<CalendarRoomDto> ReadCalendarRooms();
+        List<CalendarEventDto> CreateCalendarEvent(CalendarEventCommandRequest request);
+        List<CalendarEventDto> UpdateCalendarEvent(CalendarEventCommandRequest request);
+        List<CalendarEventDto> DeleteCalendarEvent(CalendarEventCommandRequest request);
         List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request);
 
         Task HandleFetchFolderRootsAsync(OutlookCommand command);

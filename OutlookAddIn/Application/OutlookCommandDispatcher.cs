@@ -112,6 +112,18 @@ namespace OutlookAddIn.Application
                 case "fetch_calendar":
                     await HandleFetchCalendarAsync(cmd).ConfigureAwait(false);
                     break;
+                case "fetch_calendar_rooms":
+                    await HandleFetchCalendarRoomsAsync(cmd).ConfigureAwait(false);
+                    break;
+                case "create_calendar_event":
+                    await HandleCalendarMutationAsync(cmd, "create").ConfigureAwait(false);
+                    break;
+                case "update_calendar_event":
+                    await HandleCalendarMutationAsync(cmd, "update").ConfigureAwait(false);
+                    break;
+                case "delete_calendar_event":
+                    await HandleCalendarMutationAsync(cmd, "delete").ConfigureAwait(false);
+                    break;
                 case "fetch_address_book":
                     await HandleFetchAddressBookAsync(cmd).ConfigureAwait(false);
                     break;
@@ -310,6 +322,34 @@ namespace OutlookAddIn.Application
             List<CalendarEventDto> events = await _outlookThread.InvokeAsync(() => _automation.ReadCalendarEvents(calStart, calEnd)).ConfigureAwait(false);
             await _signalRClient.PushCalendarAsync(events ?? new List<CalendarEventDto>()).ConfigureAwait(false);
             await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_calendar completed. Items: " + (events?.Count ?? 0)).ConfigureAwait(false);
+        }
+
+        private async Task HandleCalendarMutationAsync(OutlookCommand cmd, string operation)
+        {
+            try
+            {
+                var request = cmd.CalendarEventRequest ?? new CalendarEventCommandRequest();
+                List<CalendarEventDto> events = await _outlookThread.InvokeAsync(() =>
+                {
+                    if (operation == "create") return _automation.CreateCalendarEvent(request);
+                    if (operation == "update") return _automation.UpdateCalendarEvent(request);
+                    return _automation.DeleteCalendarEvent(request);
+                }).ConfigureAwait(false);
+                await _signalRClient.PushCalendarAsync(events ?? new List<CalendarEventDto>()).ConfigureAwait(false);
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, true, cmd.Type + " completed.").ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                await _signalRClient.ReportCommandResultAsync(cmd.Id, false, ex.Message).ConfigureAwait(false);
+            }
+        }
+
+        private async Task HandleFetchCalendarRoomsAsync(OutlookCommand cmd)
+        {
+            await _signalRClient.ReportLogAsync("info", "fetch_calendar_rooms: starting").ConfigureAwait(false);
+            List<CalendarRoomDto> rooms = await _outlookThread.InvokeAsync(() => _automation.ReadCalendarRooms()).ConfigureAwait(false);
+            await _signalRClient.PushCalendarRoomsAsync(rooms ?? new List<CalendarRoomDto>()).ConfigureAwait(false);
+            await _signalRClient.ReportCommandResultAsync(cmd.Id, true, "fetch_calendar_rooms completed. Items: " + (rooms?.Count ?? 0)).ConfigureAwait(false);
         }
 
         private async Task HandleFetchAddressBookAsync(OutlookCommand cmd)

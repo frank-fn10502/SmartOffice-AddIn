@@ -183,6 +183,12 @@ namespace OutlookAddIn.Clients
             await _connection.InvokeAsync("PushCalendar", events).ConfigureAwait(false);
         }
 
+        public async Task PushCalendarRoomsAsync(List<CalendarRoomDto> rooms)
+        {
+            if (!IsConnected) return;
+            await _connection.InvokeAsync("PushCalendarRooms", rooms).ConfigureAwait(false);
+        }
+
         public async Task PushAddressBookAsync(List<AddressBookContactDto> contacts)
         {
             if (!IsConnected) return;

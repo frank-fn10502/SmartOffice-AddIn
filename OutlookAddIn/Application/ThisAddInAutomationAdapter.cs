@@ -70,6 +70,18 @@ namespace OutlookAddIn.Application
         public List<CalendarEventDto> ReadCalendarEvents(DateTime start, DateTime end) =>
             _calendarReader.ReadCalendarEvents(start, end);
 
+        public List<CalendarRoomDto> ReadCalendarRooms() =>
+            _calendarReader.ReadCalendarRooms();
+
+        public List<CalendarEventDto> CreateCalendarEvent(CalendarEventCommandRequest request) =>
+            _calendarReader.CreateCalendarEvent(request);
+
+        public List<CalendarEventDto> UpdateCalendarEvent(CalendarEventCommandRequest request) =>
+            _calendarReader.UpdateCalendarEvent(request);
+
+        public List<CalendarEventDto> DeleteCalendarEvent(CalendarEventCommandRequest request) =>
+            _calendarReader.DeleteCalendarEvent(request);
+
         public List<AddressBookContactDto> ReadAddressBook(AddressBookSyncRequest request) =>
             _addressBookReader.ReadAddressBook(request);
 

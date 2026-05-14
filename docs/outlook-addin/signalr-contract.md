@@ -75,6 +75,7 @@ Payload：
   "mailAttachmentsRequest": null,
   "exportMailAttachmentRequest": null,
   "calendarRequest": null,
+  "calendarEventRequest": null,
   "mailPropertiesRequest": null,
   "categoryRequest": null,
   "ruleRequest": null,
@@ -106,6 +107,10 @@ Payload：
 | `fetch_categories` | 無 | 讀取 Outlook master category list |
 | `ping` | 無 | readiness probe；只有 Outlook object model 可正常呼叫時才回成功 |
 | `fetch_calendar` | `calendarRequest` | 讀取 calendar events |
+| `fetch_calendar_rooms` | 無 | 讀取 Outlook room/resource 清單 |
+| `create_calendar_event` | `calendarEventRequest` | 建立 SmartOffice-owned calendar event |
+| `update_calendar_event` | `calendarEventRequest` | 更新 SmartOffice-owned calendar event |
+| `delete_calendar_event` | `calendarEventRequest` | 刪除 SmartOffice-owned calendar event |
 | `fetch_address_book` | `addressBookRequest` | 讀取 Outlook Contacts folder 與 AddressLists / GAL 的通訊錄 metadata |
 | `update_mail_properties` | `mailPropertiesRequest` | 一次更新已讀、flag、category 與新 category |
 | `upsert_category` | `categoryRequest` | 新增或更新 master category |
@@ -118,6 +123,10 @@ Payload：
 `delete_mail` 是獨立 command；但它的唯一允許實作仍是將 mail 移到同一個 Outlook store / mailbox 的 default Deleted Items folder。AddIn 必須用 Outlook object model 的 default folder identity 定位目的地，例如 `Store.GetDefaultFolder(olFolderDeletedItems)` 或等效流程；不得用顯示名稱、本地化名稱、`folderPath` 字串包含 `Deleted Items` / `刪除的郵件` 等方式猜測目的 folder。AddIn 不得呼叫 Outlook `MailItem.Delete()` 或永久刪除郵件。
 
 所有 mail / folder delete 類 command 都是 soft delete。`delete_mail` 只允許把 mail 移到 Outlook default Deleted Items folder，不得永久刪除。`delete_folder` 也只允許把 folder 移到 Outlook default Deleted Items folder；AddIn 收到 command 時永遠只執行 move，不呼叫永久刪除 API。
+
+Calendar mutation 只能作用於 SmartOffice 建立的 event。AddIn 建立 event 時必須寫入 ownership marker，例如 Outlook `UserProperties`；收到 `update_calendar_event` 或 `delete_calendar_event` 時必須重新讀取 Outlook item 並確認 marker 存在。若 marker 不存在，回報 `ReportCommandResult(success=false, message="not_smartoffice_owned")`，不得用 subject、時間或 organizer 猜測 ownership。
+
+Calendar `resources` 是 Outlook meeting room / equipment resource recipients。AddIn 應把每個 resource 加到 `AppointmentItem.Recipients`，並設定 recipient type 為 `olResource`；不要只把會議室名稱寫進 `Location`。
 
 `ping` 不是單純 SignalR echo。收到 `ping` 時，AddIn 必須確認 Outlook object model 可正常呼叫。若 Outlook 剛啟動、profile 尚未 ready、COM object 暫時 busy，AddIn 應回 `ReportCommandResult(success=false)` 或等到可判斷後再回覆；不要在 Outlook 尚不可操作時回成功。
 
