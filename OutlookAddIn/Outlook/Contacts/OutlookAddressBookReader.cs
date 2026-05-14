@@ -23,13 +23,14 @@ namespace OutlookAddIn.OutlookServices.Contacts
             var maxAddressEntriesPerList = Clamp(request.MaxAddressEntriesPerList, 1, 2000, 500);
             var maxGroupMembers = request.MaxGroupMembers < 0 ? 50 : Math.Min(request.MaxGroupMembers, 500);
             var maxGroupDepth = request.MaxGroupDepth < 0 ? 1 : Math.Min(request.MaxGroupDepth, 3);
+            var groupMemberReadBudget = Math.Min(maxContacts, 1000);
             var contacts = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
 
             if (request.IncludeOutlookContacts)
                 ReadDefaultContactsFolder(contacts, maxContacts);
 
             if (request.IncludeAddressLists && contacts.Count < maxContacts)
-                ReadAddressLists(contacts, maxContacts, maxAddressEntriesPerList, maxGroupMembers, maxGroupDepth);
+                ReadAddressLists(contacts, maxContacts, maxAddressEntriesPerList, maxGroupMembers, maxGroupDepth, ref groupMemberReadBudget);
 
             return contacts.Values
                 .OrderBy(item => item.DisplayName)
@@ -87,7 +88,8 @@ namespace OutlookAddIn.OutlookServices.Contacts
             int maxContacts,
             int maxAddressEntriesPerList,
             int maxGroupMembers,
-            int maxGroupDepth)
+            int maxGroupDepth,
+            ref int groupMemberReadBudget)
         {
             Outlook.AddressLists lists = null;
 
@@ -115,7 +117,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                             try
                             {
                                 entry = entries[entryIndex];
-                                AddAddressEntry(contacts, entry, list, maxGroupMembers, maxGroupDepth);
+                                AddAddressEntry(contacts, entry, list, maxGroupMembers, maxGroupDepth, ref groupMemberReadBudget);
                             }
                             catch { }
                             finally
@@ -185,7 +187,8 @@ namespace OutlookAddIn.OutlookServices.Contacts
             Outlook.AddressEntry entry,
             Outlook.AddressList list,
             int maxGroupMembers,
-            int maxGroupDepth)
+            int maxGroupDepth,
+            ref int groupMemberReadBudget)
         {
             if (entry == null) return;
 
@@ -238,7 +241,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                     dto.DisplayName = Prefer(dto.DisplayName, ReadString(() => distributionList.Name));
                     dto.SmtpAddress = Prefer(dto.SmtpAddress, ReadString(() => distributionList.PrimarySmtpAddress));
                     dto.RawAddress = Prefer(dto.RawAddress, dto.SmtpAddress);
-                    ReadDistributionListMembers(distributionList, dto, maxGroupMembers, maxGroupDepth, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                    ReadDistributionListMembers(distributionList, dto, maxGroupMembers, maxGroupDepth, 0, new HashSet<string>(StringComparer.OrdinalIgnoreCase), ref groupMemberReadBudget);
                 }
             }
             catch { }
@@ -259,9 +262,10 @@ namespace OutlookAddIn.OutlookServices.Contacts
             int maxGroupMembers,
             int maxGroupDepth,
             int depth,
-            HashSet<string> visitedGroups)
+            HashSet<string> visitedGroups,
+            ref int groupMemberReadBudget)
         {
-            if (distributionList == null || maxGroupMembers <= 0 || depth > maxGroupDepth) return;
+            if (distributionList == null || maxGroupMembers <= 0 || depth > maxGroupDepth || groupMemberReadBudget <= 0) return;
             var groupKey = ReadString(() => distributionList.PrimarySmtpAddress);
             if (!string.IsNullOrWhiteSpace(groupKey) && !visitedGroups.Add(groupKey)) return;
 
@@ -270,9 +274,10 @@ namespace OutlookAddIn.OutlookServices.Contacts
             {
                 members = distributionList.GetExchangeDistributionListMembers();
                 if (members == null) return;
-                var limit = Math.Min(members.Count, maxGroupMembers - dto.MemberSmtpAddresses.Count);
+                var limit = Math.Min(Math.Min(members.Count, maxGroupMembers - dto.MemberSmtpAddresses.Count), groupMemberReadBudget);
                 for (var i = 1; i <= limit; i++)
                 {
+                    groupMemberReadBudget--;
                     Outlook.AddressEntry member = null;
                     Outlook.ExchangeDistributionList nested = null;
                     try
@@ -287,7 +292,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
                         if (nested != null && !string.IsNullOrWhiteSpace(smtp))
                         {
                             dto.MemberGroupSmtpAddresses.Add(smtp);
-                            ReadDistributionListMembers(nested, dto, maxGroupMembers, maxGroupDepth, depth + 1, visitedGroups);
+                            ReadDistributionListMembers(nested, dto, maxGroupMembers, maxGroupDepth, depth + 1, visitedGroups, ref groupMemberReadBudget);
                         }
                     }
                     catch { }
