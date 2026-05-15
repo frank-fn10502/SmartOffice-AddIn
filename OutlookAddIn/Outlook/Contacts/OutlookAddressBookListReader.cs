@@ -31,7 +31,7 @@ namespace OutlookAddIn.OutlookServices.Contacts
 
         public async Task<AddressBookListEntriesPageDto> ReadAddressListEntriesAsync(AddressBookListEntriesRequest request, string requestId)
         {
-            request ??= new AddressBookListEntriesRequest();
+            if (request == null) request = new AddressBookListEntriesRequest();
             var offset = Math.Max(0, request.Offset);
             var pageSize = Math.Max(1, Math.Min(500, request.PageSize <= 0 ? 100 : request.PageSize));
             var contacts = new Dictionary<string, AddressBookContactDto>(StringComparer.OrdinalIgnoreCase);
