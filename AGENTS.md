@@ -6,6 +6,9 @@
 
 - 請使用繁體中文與使用者溝通；技術名詞、API name、file path、command、class name 與 JSON field 可保留英文。
 - `SmartOffice/` 需要 Windows 主機、Visual Studio、Outlook、Office/VSTO runtime 才能完整編譯與測試。
+- 真正工作機目前使用 Visual Studio 2022 17.x 開啟 `SmartOffice.sln`。
+- `OutlookAddIn/` 是 .NET Framework 4.8 VSTO Outlook Add-in，project 使用 Office/Outlook interop 15.0、VSTO v4.0，debug host 指向 Office 16.0 Outlook。
+- `OutlookAddIn` 目前編譯語言等級是 C# 7.3；不要使用 C# 8+ 語法，例如 `??=`、nullable reference types、switch expression、using declaration、index/range operator 或 async streams。需要 LINQ extension method 時要明確加 `using System.Linq;`。
 - 目前這台主機預設只能測 `../SmartOffice.Hub`，不能可靠執行 Outlook Add-in。
 - 修改本專案時，最終回覆請明確區分：
   - 已完成的程式碼或文件修改。

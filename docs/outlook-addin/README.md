@@ -14,6 +14,9 @@ AddIn 的定位很薄：收到 command、呼叫 Outlook API、把結果轉成 DT
 ## 使用原則
 
 - checklist 是任務入口；contract 是欄位規格。
+- 真正工作機目前使用 Visual Studio 2022 17.x 開啟 `SmartOffice.sln`。
+- `OutlookAddIn/` 是 .NET Framework 4.8 VSTO Outlook AddIn，使用 Office/Outlook interop 15.0、VSTO v4.0，debug host 指向 Office 16.0 Outlook。
+- `OutlookAddIn` 目前編譯語言等級是 C# 7.3；實作時不要使用 C# 8+ 語法，例如 `??=`、nullable reference types、switch expression、using declaration、index/range operator 或 async streams。需要 LINQ extension method 時要明確加 `using System.Linq;`。
 - 實作新 AddIn command 前，請先確認對應 Hub contract 已在 `../SmartOffice.Hub` 完成：Microsoft 官方文件可行性確認、HTTP request/fetch-result endpoint、SignalR command/result DTO、mock backend、Web UI 手動檢查路徑、基本 UI sanity check、Hub 端負載控管與文件都已對齊，且 Mock 環境可運作。AddIn 真實 Office automation 是第二階段，不應先於 Hub/mock contract 落地。
 - 不相容舊版 AddIn contract；不要保留 `/api/outlook/poll`、`/api/outlook/push-*`、舊 chat HTTP endpoint 或沒有實際使用的 command handler。
 - 不維護未使用功能。若目前 contract 沒列出、工作機也沒有實際需求，請刪除或不要新增。
